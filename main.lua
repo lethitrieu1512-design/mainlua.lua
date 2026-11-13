@@ -1,7 +1,7 @@
 -- CodeBot V1 | Roblox Luau (Delta compatible)
--- JJS Item ESP  |  Atom-style GUI
+-- JJS Item ESP  |  Atom-style GUI  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
--- instant/auto pickup, save/load config
+-- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -50,6 +50,25 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
+
+	-- notifications (Roblox's own notification popup)
+	StatusNotify = true, NotifyDuration = 6,
+
+	-- auto collect / prompt tweaks
+	WalkCollect = false, WalkNames = "", WalkItemSpeed = 60, WalkRange = 2000, WalkTimeout = 40,
+	AutoCollect = false, AutoCollectAlertOnly = true, AutoCollectReturn = true, AutoCollectRange = 1500,
+	ExtendPrompts = false, PromptRange = 100,
+
+	-- player ESP
+	PlayerESP = false, PBox = true, PName = true, PHealth = true, PDistance = true, PTracers = false,
+	PTeamCheck = false, PMaxDistance = 3000, ColorPlayer = Color3.fromRGB(255, 80, 80),
+
+	-- movement
+	SpeedOn = false, WalkSpeedVal = 50, JumpOn = false, JumpPowerVal = 100, InfJump = false,
+	Noclip = false, Fly = false, FlySpeed = 80,
+
+	-- utility
+	AntiAFK = true, Fullbright = false, FOVOn = false, FOVVal = 90,
 
 	-- colors
 	ColorExplosive = Color3.fromRGB(255, 140, 28),
@@ -105,11 +124,14 @@ local function loadConfig()
 end
 
 loadConfig() -- settings from last time
+-- risky toggles never start switched on
+Config.Fly, Config.Noclip, Config.AutoCollect, Config.WalkCollect = false, false, false, false
 
 local connections = {}
 local running = true
 local UI = {}      -- filled by the GUI
 local Actions = {} -- filled by the ESP logic
+local Feat = {}    -- extra features (player ESP, movement, utility, auto collect)
 
 ---------------------------------------------------------------------
 -- SHARED HELPERS + ITEM CATEGORIES
@@ -161,6 +183,24 @@ local function getGuiParent()
 	end)
 	if ok and result then return result end
 	return player:WaitForChild("PlayerGui")
+end
+
+-- Roblox's own notification popup (bottom-right). `isStatus` = non-alert message, can be switched off in Settings.
+local function notify(title, text, isStatus)
+	if isStatus and not Config.StatusNotify then return end
+	task.spawn(function()
+		for _ = 1, 8 do -- the core script may not be ready yet right after execution
+			local ok = pcall(function()
+				StarterGui:SetCore("SendNotification", {
+					Title = tostring(title),
+					Text = tostring(text or ""),
+					Duration = Config.NotifyDuration,
+				})
+			end)
+			if ok then return end
+			task.wait(0.5)
+		end
+	end)
 end
 
 ---------------------------------------------------------------------
@@ -788,6 +828,31 @@ do
 			flash(btn, Actions.tpClosest(false) and "Teleported!" or "No item", "Teleport To Closest Item")
 		end)
 		finish(b)
+
+		local c = section(p.left, "Auto Collect (TP)", 2, "◆")
+		addCheckbox(c, "Auto Collect (teleports to items)", "AutoCollect", function(v)
+			notify("Auto Collect", v and "ON - teleporting to items" or "OFF", true)
+		end)
+		addCheckbox(c, "Alert Items Only", "AutoCollectAlertOnly")
+		addCheckbox(c, "Return To Start After", "AutoCollectReturn")
+		addSlider(c, "Max Distance", "AutoCollectRange", 50, 5000, " st")
+		UI.collectInfo = addInfo(c, "Auto collected: 0")
+		finish(c)
+
+		local d = section(p.right, "Prompt Tweaks", 2, "◆")
+		addCheckbox(d, "Extend Prompt Range", "ExtendPrompts", function(v) if not v then Feat.restorePrompts() end end)
+		addSlider(d, "Prompt Range", "PromptRange", 10, 500, " st")
+		finish(d)
+
+		local w = section(p.left, "Walk To Selected Items", 3, "◆")
+		addCheckbox(w, "Walk & Collect (script takes control)", "WalkCollect", function(v)
+			notify("Walk & Collect", v and "ON - walking to selected items when they spawn" or "OFF", true)
+		end)
+		addInput(w, "Selected Items (empty = alert items)", "WalkNames", "C4, sword, ... comma separated")
+		addSlider(w, "Walk Speed To Item", "WalkItemSpeed", 16, 300, "")
+		addSlider(w, "Max Distance", "WalkRange", 50, 5000, " st")
+		addSlider(w, "Give Up After", "WalkTimeout", 10, 90, "s")
+		finish(w)
 	end, tabFail("Pickup"))
 
 	xpcall(function() -- Colors
@@ -808,12 +873,17 @@ do
 
 		local a = section(p.left, "Config", 1, "◍")
 		UI.configInfo = addInfo(a, "Config: ready")
-		addButton(a, "Save Config", function() UI.configInfo.Text = saveConfig() and "Config saved" or "Save failed (no writefile)" end)
+		addButton(a, "Save Config", function()
+				local ok = saveConfig()
+				UI.configInfo.Text = ok and "Config saved" or "Save failed (no writefile)"
+				notify("Config", ok and "Config saved" or "Save failed (no writefile)", true)
+			end)
 		addButton(a, "Load Config", function()
 			if loadConfig() then
 				UI.sync()
 				Actions.reapply()
 				UI.configInfo.Text = "Config loaded"
+				notify("Config", "Config loaded", true)
 			else
 				UI.configInfo.Text = "No saved config found"
 			end
@@ -841,7 +911,70 @@ do
 		addKeybind(c, "ESP Toggle Key", "ToggleKey")
 		addButton(c, "Unload Script", function() Actions.unload() end)
 		finish(c)
+
+		local d = section(p.left, "Notifications", 2, "◍")
+		addCheckbox(d, "Status Notifications", "StatusNotify")
+		addSlider(d, "Notification Time", "NotifyDuration", 2, 15, "s")
+		addButton(d, "Test Roblox Notification", function() notify("Item ESP", "Roblox notifications are working") end)
+		finish(d)
 	end, tabFail("Settings"))
+
+	xpcall(function() -- Player ESP
+		local p = newPage("Player ESP")
+		local a = section(p.left, "Player ESP", 1, "◉")
+		addCheckbox(a, "Player ESP (Master)", "PlayerESP")
+		addCheckbox(a, "Box Outline", "PBox")
+		addCheckbox(a, "Name", "PName")
+		addCheckbox(a, "Health", "PHealth")
+		addCheckbox(a, "Distance", "PDistance")
+		addCheckbox(a, "Tracers (needs Drawing)", "PTracers")
+		addCheckbox(a, "Hide Teammates", "PTeamCheck")
+		addSlider(a, "Max Distance", "PMaxDistance", 100, 5000, " st")
+		finish(a)
+		local b = section(p.right, "Colors", 1, "◐")
+		addColor(b, "Players", "ColorPlayer")
+		finish(b)
+	end, tabFail("Player ESP"))
+
+	xpcall(function() -- Movement
+		local p = newPage("Movement")
+		local a = section(p.left, "Speed & Jump", 1, "▶")
+		addCheckbox(a, "Walk Speed", "SpeedOn")
+		addSlider(a, "Speed Value", "WalkSpeedVal", 16, 300, "")
+		addCheckbox(a, "Jump Power", "JumpOn")
+		addSlider(a, "Jump Value", "JumpPowerVal", 50, 400, "")
+		addCheckbox(a, "Infinite Jump", "InfJump")
+		finish(a)
+		local b = section(p.right, "Fly & Noclip", 1, "▶")
+		addCheckbox(b, "Fly (move with the stick, look to steer)", "Fly")
+		addSlider(b, "Fly Speed", "FlySpeed", 10, 300, "")
+		addCheckbox(b, "Noclip", "Noclip")
+		finish(b)
+	end, tabFail("Movement"))
+
+	xpcall(function() -- Utility
+		local p = newPage("Utility")
+		local a = section(p.left, "Visual Utility", 1, "■")
+		addCheckbox(a, "Fullbright", "Fullbright")
+		addCheckbox(a, "Custom FOV", "FOVOn")
+		addSlider(a, "FOV", "FOVVal", 40, 120, "")
+		finish(a)
+		local b = section(p.right, "Server & Character", 1, "■")
+		addCheckbox(b, "Anti AFK", "AntiAFK")
+		addButton(b, "Server Hop", function(btn)
+			flash(btn, "Hopping...", "Server Hop")
+			Feat.hop()
+		end)
+		addButton(b, "Rejoin Server", function(btn)
+			flash(btn, "Rejoining...", "Rejoin Server")
+			Feat.rejoin()
+		end)
+		addButton(b, "Reset Character", function(btn)
+			Feat.reset()
+			flash(btn, "Reset!", "Reset Character")
+		end)
+		finish(b)
+	end, tabFail("Utility"))
 
 	-- sidebar entries -----------------------------------------------
 	local subButtons, catOf, iconOf = {}, {}, {}
@@ -893,9 +1026,10 @@ do
 	end
 
 	addCategory("Main", { { "Home", "⌂" } })
-	addCategory("Visuals", { { "Item ESP", "◎" } })
+	addCategory("Visuals", { { "Item ESP", "◎" }, { "Player ESP", "◉" } })
 	addCategory("Alerts", { { "Alerts", "▲" } })
 	addCategory("Items", { { "Item List", "◈" }, { "Pickup", "◆" } })
+	addCategory("Player", { { "Movement", "▶" }, { "Utility", "■" } })
 	addCategory("Settings", { { "Colors", "◐" }, { "Settings", "◍" } })
 	selectPage("Home")
 	UI.applyUsername()
@@ -1008,44 +1142,6 @@ do
 			end
 		end
 		for i = n + 1, #radarDots do radarDots[i].Visible = false end
-	end
-
-	-- on-screen notifications (stay visible even while the window is minimized)
-	local toastHolder = create("Frame", { Name = "Toasts", Size = UDim2.new(0, 560, 0, 400), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 16), BackgroundTransparency = 1, ZIndex = 100 }, screenGui)
-	create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center }, toastHolder)
-	local toastN = 0
-	function UI.toast(title, text, color)
-		toastN = toastN + 1
-		color = color or C.White
-		local t = create("Frame", { Size = UDim2.new(0, 520, 0, 86), BackgroundColor3 = C.Panel, BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = toastN, ZIndex = 101 }, toastHolder)
-		corner(t, 18)
-		local st = stroke(t, color, 2)
-		st.Transparency = 1
-		local a = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -28, 0, 34), Position = UDim2.new(0, 18, 0, 10), Text = title, TextSize = 24, Font = F.Bold, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, TextTransparency = 1, ZIndex = 102 }, t)
-		local b = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -28, 0, 28), Position = UDim2.new(0, 18, 0, 46), Text = text, TextSize = 19, Font = F.Reg, TextColor3 = C.SubText, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, TextTransparency = 1, ZIndex = 102 }, t)
-		local ti = TweenInfo.new(0.25)
-		TweenService:Create(t, ti, { BackgroundTransparency = 0.05 }):Play()
-		TweenService:Create(st, ti, { Transparency = 0 }):Play()
-		TweenService:Create(a, ti, { TextTransparency = 0 }):Play()
-		TweenService:Create(b, ti, { TextTransparency = 0 }):Play()
-		task.delay(6, function()
-			if not t.Parent then return end
-			local out = TweenInfo.new(0.3)
-			TweenService:Create(t, out, { BackgroundTransparency = 1 }):Play()
-			TweenService:Create(st, out, { Transparency = 1 }):Play()
-			TweenService:Create(a, out, { TextTransparency = 1 }):Play()
-			TweenService:Create(b, out, { TextTransparency = 1 }):Play()
-			task.delay(0.35, function() if t.Parent then t:Destroy() end end)
-		end)
-		local kids = {}
-		for _, k in ipairs(toastHolder:GetChildren()) do
-			if k:IsA("Frame") then kids[#kids + 1] = k end
-		end
-		table.sort(kids, function(x, y) return x.LayoutOrder < y.LayoutOrder end)
-		while #kids > 3 do
-			kids[1]:Destroy()
-			table.remove(kids, 1)
-		end
 	end
 
 	function UI.refreshList(entries, total)
@@ -1229,11 +1325,7 @@ local function sendAlert(e, kind)
 		title = e.name .. " appeared!"
 	end
 	local body = d .. " studs | " .. directionText(pos)
-	local color = e.alert and Config.AlertColor or Config["Color" .. e.cat.id]
-	if UI.toast then UI.toast(title, body, color) end
-	pcall(function()
-		StarterGui:SetCore("SendNotification", { Title = title, Text = body, Duration = 6 })
-	end)
+	notify(title, body)
 	playAlertSound()
 end
 
@@ -1253,8 +1345,8 @@ local function removeEntry(root, silent)
 	pcall(function() e.bb:Destroy() end)
 	if e.line then pcall(function() e.line:Remove() end) end
 	if e.origHold and e.prompt then pcall(function() e.prompt.HoldDuration = e.origHold end) end
-	if not silent and running and Config.AlertOnDespawn and Config.AlertEnabled and e.notify and e.alerted and UI.toast then
-		UI.toast(e.name .. " is gone", "picked up or despawned", Color3.fromRGB(150, 153, 168))
+	if not silent and running and Config.AlertOnDespawn and Config.AlertEnabled and e.notify and e.alerted then
+		notify(e.name .. " is gone", "picked up or despawned")
 	end
 end
 
@@ -1528,6 +1620,13 @@ table.insert(connections, RunService.Heartbeat:Connect(function(dt)
 					pcall(function() prompt.HoldDuration = 0 end)
 				end
 			end
+			if Config.ExtendPrompts then
+				if not e.origRange then e.origRange = { prompt.MaxActivationDistance, prompt.RequiresLineOfSight } end
+				pcall(function()
+					prompt.MaxActivationDistance = Config.PromptRange
+					prompt.RequiresLineOfSight = false
+				end)
+			end
 			if Config.AutoPickup and e.dist <= Config.AutoPickupRange and (not Config.AutoPickupAlertOnly or e.alert) and now - e.lastPick > 0.4 then
 				e.lastPick = now
 				if firePrompt(prompt) then pickedCount = pickedCount + 1 end
@@ -1715,12 +1814,540 @@ Actions.testAlert = function()
 end
 
 ---------------------------------------------------------------------
+-- EXTRA FEATURES (player ESP, movement, utility, auto collect)
+---------------------------------------------------------------------
+Feat.pl = {}          -- player ESP objects, keyed by Player
+Feat.orig = {}        -- values to restore when a feature is switched off
+Feat.collected = 0
+Feat.acc = 0
+Feat.Lighting = game:GetService("Lighting")
+
+Feat.restorePrompts = function()
+	for _, e in pairs(tracked) do
+		if e.origRange and e.prompt then
+			pcall(function()
+				e.prompt.MaxActivationDistance = e.origRange[1]
+				e.prompt.RequiresLineOfSight = e.origRange[2]
+			end)
+			e.origRange = nil
+		end
+	end
+end
+
+-- player ESP ----------------------------------------------------------
+Feat.dropPlayer = function(plr)
+	local ent = Feat.pl[plr]
+	if not ent then return end
+	Feat.pl[plr] = nil
+	pcall(function() ent.box:Destroy() end)
+	pcall(function() ent.bb:Destroy() end)
+	if ent.line then pcall(function() ent.line:Remove() end) end
+end
+
+Feat.makePlayer = function(plr, char)
+	local ent = { char = char, dist = 0 }
+	local box = Instance.new("SelectionBox")
+	box.Adornee = char
+	box.LineThickness = 0.04
+	box.SurfaceTransparency = 0.88
+	box.Parent = espFolder
+
+	local bb = Instance.new("BillboardGui")
+	bb.Adornee = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+	bb.AlwaysOnTop = true
+	bb.Size = UDim2.fromOffset(260, 60)
+	bb.StudsOffset = Vector3.new(0, 2.8, 0)
+	bb.LightInfluence = 0
+	bb.Parent = espFolder
+	local lbl = Instance.new("TextLabel")
+	lbl.BackgroundTransparency = 1
+	lbl.Size = UDim2.new(1, 0, 1, 0)
+	lbl.Font = Enum.Font.GothamBold
+	lbl.TextSize = 15
+	lbl.TextStrokeTransparency = 0.35
+	lbl.TextWrapped = true
+	lbl.Parent = bb
+	ent.box, ent.bb, ent.lbl = box, bb, lbl
+
+	if Drawing then
+		local okLine, line = pcall(function() return Drawing.new("Line") end)
+		if okLine and line then
+			line.Thickness = 1.5
+			line.Visible = false
+			ent.line = line
+		end
+	end
+	Feat.pl[plr] = ent
+	return ent
+end
+
+Feat.updatePlayers = function()
+	local origin = currentOrigin()
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			local char = plr.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local want = Config.PlayerESP and hrp ~= nil and hum ~= nil and hum.Health > 0
+			local dist = 0
+			if want then
+				dist = (hrp.Position - origin).Magnitude
+				if dist > Config.PMaxDistance then want = false end
+				if want and Config.PTeamCheck and plr.Team ~= nil and plr.Team == player.Team then want = false end
+			end
+			local ent = Feat.pl[plr]
+			if ent and (not want or ent.char ~= char) then
+				Feat.dropPlayer(plr)
+				ent = nil
+			end
+			if want then
+				if not ent then ent = Feat.makePlayer(plr, char) end
+				ent.hrp = hrp
+				ent.dist = dist
+				local col = Config.ColorPlayer
+				ent.box.Visible = Config.PBox
+				ent.box.Color3 = col
+				ent.box.SurfaceColor3 = col
+				local parts = {}
+				if Config.PName then
+					parts[#parts + 1] = (plr.DisplayName ~= plr.Name) and (plr.DisplayName .. " (@" .. plr.Name .. ")") or plr.Name
+				end
+				if Config.PHealth then
+					parts[#parts + 1] = "HP " .. math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
+				end
+				if Config.PDistance then
+					parts[#parts + 1] = "[" .. math.floor(dist) .. " studs]"
+				end
+				ent.bb.Enabled = #parts > 0
+				ent.lbl.Text = table.concat(parts, "\n")
+				ent.lbl.TextColor3 = col
+				ent.bb.Size = UDim2.fromOffset(280, 19 * math.max(#parts, 1) + 8)
+			end
+		end
+	end
+	for plr in pairs(Feat.pl) do
+		if not plr.Parent then Feat.dropPlayer(plr) end
+	end
+end
+
+-- lighting ------------------------------------------------------------
+Feat.light = function()
+	local L = Feat.Lighting
+	if Config.Fullbright then
+		if not Feat.orig.light then
+			Feat.orig.light = {
+				Brightness = L.Brightness, ClockTime = L.ClockTime, FogEnd = L.FogEnd,
+				GlobalShadows = L.GlobalShadows, Ambient = L.Ambient, OutdoorAmbient = L.OutdoorAmbient,
+			}
+		end
+		L.Brightness = 2
+		L.ClockTime = 14
+		L.FogEnd = 100000
+		L.GlobalShadows = false
+		L.Ambient = Color3.fromRGB(178, 178, 178)
+		L.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
+	elseif Feat.orig.light then
+		for k, v in pairs(Feat.orig.light) do pcall(function() L[k] = v end) end
+		Feat.orig.light = nil
+	end
+end
+
+-- fly -----------------------------------------------------------------
+Feat.stopFly = function()
+	if Feat.bv then pcall(function() Feat.bv:Destroy() end) Feat.bv = nil end
+	if Feat.bg then pcall(function() Feat.bg:Destroy() end) Feat.bg = nil end
+	if Feat.flyStand then
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then pcall(function() hum.PlatformStand = false end) end
+		Feat.flyStand = false
+	end
+end
+
+-- main per-frame step (speed, jump, fly) + slower tick (player ESP, lighting)
+Feat.step = function(dt)
+	Feat.acc = Feat.acc + dt
+	if Feat.acc >= 0.1 then
+		Feat.acc = 0
+		pcall(Feat.updatePlayers)
+		pcall(Feat.light)
+	end
+
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not (hum and hrp) then return end
+
+	if Config.SpeedOn and not Feat.walking then
+		if not Feat.orig.speed then Feat.orig.speed = hum.WalkSpeed end
+		hum.WalkSpeed = Config.WalkSpeedVal
+	elseif Feat.orig.speed and not Feat.walking then
+		hum.WalkSpeed = Feat.orig.speed
+		Feat.orig.speed = nil
+	end
+
+	if Config.JumpOn then
+		if not Feat.orig.jump then Feat.orig.jump = { hum.UseJumpPower, hum.JumpPower } end
+		hum.UseJumpPower = true
+		hum.JumpPower = Config.JumpPowerVal
+	elseif Feat.orig.jump then
+		hum.UseJumpPower = Feat.orig.jump[1]
+		hum.JumpPower = Feat.orig.jump[2]
+		Feat.orig.jump = nil
+	end
+
+	if Config.Fly and hum.Health > 0 then
+		if not Feat.bv or Feat.bv.Parent ~= hrp then
+			if Feat.bv then pcall(function() Feat.bv:Destroy() end) end
+			if Feat.bg then pcall(function() Feat.bg:Destroy() end) end
+			local bv = Instance.new("BodyVelocity")
+			bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+			bv.Velocity = Vector3.zero
+			bv.Parent = hrp
+			local bg = Instance.new("BodyGyro")
+			bg.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+			bg.P = 9e4
+			bg.CFrame = hrp.CFrame
+			bg.Parent = hrp
+			Feat.bv, Feat.bg = bv, bg
+		end
+		hum.PlatformStand = true
+		Feat.flyStand = true
+		local cam = Workspace.CurrentCamera
+		if cam then
+			local look = cam.CFrame.LookVector
+			local flat = Vector3.new(look.X, 0, look.Z)
+			if flat.Magnitude > 0.01 then
+				Feat.bg.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + flat)
+			end
+			local md = hum.MoveDirection
+			if md.Magnitude > 0.05 then
+				local o = cam.CFrame:VectorToObjectSpace(md)
+				local dir = cam.CFrame.LookVector * (-o.Z) + cam.CFrame.RightVector * o.X
+				if dir.Magnitude > 0.01 then
+					Feat.bv.Velocity = dir.Unit * Config.FlySpeed
+				else
+					Feat.bv.Velocity = Vector3.zero
+				end
+			else
+				Feat.bv.Velocity = Vector3.zero
+			end
+		end
+	elseif Feat.bv or Feat.flyStand then
+		Feat.stopFly()
+	end
+end
+
+table.insert(connections, RunService.Heartbeat:Connect(function(dt)
+	local ok, err = pcall(Feat.step, dt)
+	if not ok and not Feat.warned then
+		Feat.warned = true
+		warn("Item ESP: feature step error: " .. tostring(err))
+	end
+end))
+
+-- FOV + player tracers (every rendered frame)
+Feat.render = function()
+	local cam = Workspace.CurrentCamera
+	if not cam then return end
+	if Config.FOVOn then
+		if not Feat.orig.fov then Feat.orig.fov = cam.FieldOfView end
+		cam.FieldOfView = Config.FOVVal
+	elseif Feat.orig.fov then
+		cam.FieldOfView = Feat.orig.fov
+		Feat.orig.fov = nil
+	end
+	if Drawing then
+		local vp = cam.ViewportSize
+		local from = Vector2.new(vp.X / 2, vp.Y)
+		for _, ent in pairs(Feat.pl) do
+			local line = ent.line
+			if line then
+				if Config.PTracers and ent.hrp and ent.hrp.Parent then
+					local v, on = cam:WorldToViewportPoint(ent.hrp.Position)
+					if on and v.Z > 0 then
+						line.From = from
+						line.To = Vector2.new(v.X, v.Y)
+						line.Color = Config.ColorPlayer
+						line.Visible = true
+					else
+						line.Visible = false
+					end
+				else
+					line.Visible = false
+				end
+			end
+		end
+	end
+end
+table.insert(connections, RunService.RenderStepped:Connect(function() pcall(Feat.render) end))
+
+-- noclip
+table.insert(connections, RunService.Stepped:Connect(function()
+	if not Config.Noclip then return end
+	local char = player.Character
+	if not char then return end
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
+	end
+end))
+
+-- infinite jump
+table.insert(connections, UserInputService.JumpRequest:Connect(function()
+	if not Config.InfJump then return end
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+end))
+
+-- anti AFK
+table.insert(connections, player.Idled:Connect(function()
+	if not Config.AntiAFK then return end
+	pcall(function()
+		local vu = game:GetService("VirtualUser")
+		vu:CaptureController()
+		vu:ClickButton2(Vector2.new())
+	end)
+end))
+
+-- auto collect (teleport to the item, fire its prompt, optionally come back)
+task.spawn(function()
+	while running do
+		task.wait(0.4)
+		if running and Config.AutoCollect and not Feat.walking then
+			local char = player.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if hrp and hum and hum.Health > 0 then
+				local now = os.clock()
+				local target
+				for _, e in ipairs(lastArr) do
+					if e.part.Parent and e.prompt and e.prompt.Parent and e.dist <= Config.AutoCollectRange
+						and (not Config.AutoCollectAlertOnly or e.alert) and now - (e.lastCollect or 0) > 4 then
+						target = e
+						break
+					end
+				end
+				if target then
+					target.lastCollect = now
+					local home = hrp.CFrame
+					local prompt = target.prompt
+					local oldHold = prompt.HoldDuration
+					pcall(function() prompt.HoldDuration = 0 end)
+					hrp.CFrame = CFrame.new(target.part.Position + Vector3.new(0, 3, 0))
+					task.wait(0.15)
+					for _ = 1, 4 do
+						if not (prompt.Parent and target.part.Parent) then break end
+						firePrompt(prompt)
+						task.wait(0.1)
+					end
+					task.wait(0.2)
+					pcall(function() prompt.HoldDuration = oldHold end)
+					if Config.AutoCollectReturn and hrp.Parent then hrp.CFrame = home end
+					if not target.root.Parent or not target.part.Parent then
+						Feat.collected = Feat.collected + 1
+						pickedCount = pickedCount + 1
+						if UI.collectInfo then UI.collectInfo.Text = "Auto collected: " .. Feat.collected end
+						notify("Auto Collect", target.name .. " collected", true)
+					end
+				end
+			end
+		end
+	end
+end)
+
+-- server / character helpers ---------------------------------------------
+Feat.hop = function()
+	notify("Server Hop", "Looking for another server...", true)
+	task.spawn(function()
+		local TS = game:GetService("TeleportService")
+		local ok, body = pcall(function()
+			return game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
+		end)
+		if ok and body then
+			local ok2, data = pcall(function() return HttpService:JSONDecode(body) end)
+			if ok2 and type(data) == "table" and type(data.data) == "table" then
+				local cands = {}
+				for _, sv in ipairs(data.data) do
+					if sv.id ~= game.JobId and sv.playing and sv.maxPlayers and sv.playing < sv.maxPlayers - 1 then
+						cands[#cands + 1] = sv.id
+					end
+				end
+				if #cands > 0 then
+					pcall(function() TS:TeleportToPlaceInstance(game.PlaceId, cands[math.random(#cands)], player) end)
+					return
+				end
+			end
+		end
+		notify("Server Hop", "No server list, using a normal teleport", true)
+		pcall(function() TS:Teleport(game.PlaceId, player) end)
+	end)
+end
+
+Feat.rejoin = function()
+	notify("Rejoin", "Rejoining this server...", true)
+	local TS = game:GetService("TeleportService")
+	if #Players:GetPlayers() <= 1 then
+		task.spawn(function()
+			pcall(function() TS:Teleport(game.PlaceId, player) end)
+		end)
+	else
+		pcall(function() TS:TeleportToPlaceInstance(game.PlaceId, game.JobId, player) end)
+	end
+end
+
+Feat.reset = function()
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if hum then hum.Health = 0 end
+end
+
+-- walk to selected items (pathfinding, finds a way around obstacles) and collect them
+Feat.walking = false
+Feat.PFS = game:GetService("PathfindingService")
+
+Feat.walkTo = function(e)
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not (hum and hrp) then return false end
+	local deadline = os.clock() + Config.WalkTimeout
+	local fails = 0
+	local function gone() return not (e.part.Parent and e.root.Parent) end
+	local function near() return (hrp.Position - e.part.Position).Magnitude <= 6 end
+	local function alive() return running and Config.WalkCollect and hum.Health > 0 and hrp.Parent end
+
+	while alive() and os.clock() < deadline and fails < 8 do
+		if gone() then return false end
+		if near() then return true end
+		local path = Feat.PFS:CreatePath({ AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, AgentCanClimb = true })
+		local okPath = pcall(function() path:ComputeAsync(hrp.Position, e.part.Position) end)
+		if okPath and path.Status == Enum.PathStatus.Success then
+			local wps = path:GetWaypoints()
+			local blockedConn
+			local blocked = false
+			blockedConn = path.Blocked:Connect(function() blocked = true end)
+			for i = 2, #wps do
+				if not alive() or gone() or near() or blocked or os.clock() > deadline then break end
+				local wp = wps[i]
+				if wp.Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
+				hum:MoveTo(wp.Position)
+				local last, lastT, stuck, t0 = hrp.Position, os.clock(), 0, os.clock()
+				while alive() and not gone() and not near() and not blocked and os.clock() - t0 < 3 do
+					local flat = Vector3.new(hrp.Position.X - wp.Position.X, 0, hrp.Position.Z - wp.Position.Z).Magnitude
+					if flat < 3 then break end
+					if os.clock() - lastT > 0.5 then
+						if (hrp.Position - last).Magnitude < 0.6 then
+							stuck = stuck + 1
+							hum.Jump = true
+							if stuck >= 3 then break end
+						else
+							stuck = 0
+						end
+						last, lastT = hrp.Position, os.clock()
+					end
+					task.wait(0.1)
+				end
+				if stuck >= 3 then
+					fails = fails + 1
+					break -- recompute a new path from here
+				end
+			end
+			if blockedConn then blockedConn:Disconnect() end
+		else
+			-- no path: shove straight at the item, jumping, then try again
+			fails = fails + 1
+			local dir = e.part.Position - hrp.Position
+			hum:MoveTo(e.part.Position)
+			hum.Jump = true
+			task.wait(0.8)
+			if fails >= 4 and dir.Magnitude > 8 then
+				-- last resort unstick: short hop toward the item
+				hrp.CFrame = hrp.CFrame + dir.Unit * 6 + Vector3.new(0, 2, 0)
+			end
+		end
+	end
+	return alive() and not gone() and near()
+end
+
+task.spawn(function()
+	while running do
+		task.wait(0.5)
+		if running and Config.WalkCollect and not Config.Fly then
+			local char = player.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			if hum and hrp and hum.Health > 0 then
+				local names = parseList(Config.WalkNames ~= "" and Config.WalkNames or Config.AlertNames)
+				local now = os.clock()
+				local target
+				for _, e in ipairs(lastArr) do
+					if e.part.Parent and e.dist <= Config.WalkRange and now >= (e.walkSkip or 0)
+						and nameHas(string.lower(e.name), names) then
+						target = e
+						break
+					end
+				end
+				if target then
+					Feat.walking = true
+					local oldSpeed = hum.WalkSpeed
+					hum.WalkSpeed = Config.WalkItemSpeed
+					notify("Walking to item", target.name .. " (" .. math.floor(target.dist) .. " studs)", true)
+					local arrived = Feat.walkTo(target)
+					if arrived then
+						local prompt = target.prompt
+						local oldHold = prompt and prompt.HoldDuration
+						if prompt then pcall(function() prompt.HoldDuration = 0 end) end
+						for _ = 1, 5 do
+							if not (target.part.Parent and target.root.Parent) then break end
+							if prompt and prompt.Parent then firePrompt(prompt) end
+							task.wait(0.15)
+						end
+						if prompt and oldHold then pcall(function() prompt.HoldDuration = oldHold end) end
+					end
+					pcall(function() hum:MoveTo(hrp.Position) end)
+					pcall(function() hum.WalkSpeed = oldSpeed end)
+					if not (target.part.Parent and target.root.Parent) then
+						Feat.collected = Feat.collected + 1
+						pickedCount = pickedCount + 1
+						if UI.collectInfo then UI.collectInfo.Text = "Auto collected: " .. Feat.collected end
+						notify("Collected", target.name, true)
+					else
+						target.walkSkip = os.clock() + 20 -- could not reach it, try again later
+						notify("Could not reach", target.name .. " (retrying in 20s)", true)
+					end
+					Feat.walking = false
+				end
+			end
+		end
+	end
+end)
+
+-- undo everything when the script is unloaded
+Feat.cleanup = function()
+	Feat.stopFly()
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if hum and Feat.orig.speed then pcall(function() hum.WalkSpeed = Feat.orig.speed end) end
+	if hum and Feat.orig.jump then
+		pcall(function()
+			hum.UseJumpPower = Feat.orig.jump[1]
+			hum.JumpPower = Feat.orig.jump[2]
+		end)
+	end
+	if Feat.orig.light then
+		for k, v in pairs(Feat.orig.light) do pcall(function() Feat.Lighting[k] = v end) end
+	end
+	local cam = Workspace.CurrentCamera
+	if cam and Feat.orig.fov then pcall(function() cam.FieldOfView = Feat.orig.fov end) end
+	Feat.restorePrompts()
+	for plr in pairs(Feat.pl) do Feat.dropPlayer(plr) end
+end
+
+---------------------------------------------------------------------
 -- CLOSE / CLEANUP
 ---------------------------------------------------------------------
 local function cleanup()
 	if not running then return end
 	running = false
 	if Config.AutoSave then saveConfig() end
+	if Feat.cleanup then pcall(Feat.cleanup) end
 	for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
 	for root in pairs(tracked) do removeEntry(root, true) end
 	for _, ar in ipairs(ARROWS) do
@@ -1736,3 +2363,4 @@ getgenv().ItemESP_Cleanup = cleanup
 if UI.closeBtn then UI.closeBtn.MouseButton1Click:Connect(cleanup) end
 
 print("CodeBot V1: Item ESP loaded (alerts for: " .. Config.AlertNames .. ")")
+notify("Item ESP loaded", "Alerts for: " .. Config.AlertNames, true)
