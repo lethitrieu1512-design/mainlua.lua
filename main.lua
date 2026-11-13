@@ -66,7 +66,8 @@ local Config = {
 	-- movement
 	SpeedOn = false, WalkSpeedVal = 50, JumpOn = false, JumpPowerVal = 100, InfJump = false,
 	Noclip = false, Fly = false, FlySpeed = 80,
-	OrbitOn = false, OrbitSpeed = 2000, OrbitRadius = 8, OrbitHeight = 0, OrbitTarget = "",
+	OrbitOn = false, OrbitSpeed = 2000, OrbitRadius = 8, OrbitHeight = 0, OrbitTarget = "", OrbitStableCam = true,
+	ClickTP = false, SpectateOn = false, TPName = "",
 
 	-- utility
 	AntiAFK = true, Fullbright = false, FOVOn = false, FOVVal = 90,
@@ -127,6 +128,7 @@ end
 loadConfig() -- settings from last time
 -- risky toggles never start switched on
 Config.Fly, Config.Noclip, Config.AutoCollect, Config.WalkCollect, Config.OrbitOn = false, false, false, false, false
+Config.SpectateOn, Config.ClickTP = false, false
 
 local connections = {}
 local running = true
@@ -222,7 +224,7 @@ do
 		Tile = Color3.fromRGB(15, 16, 19), Input = Color3.fromRGB(11, 12, 15), Line = Color3.fromRGB(40, 42, 50),
 		Bar = Color3.fromRGB(70, 73, 90), BarLight = Color3.fromRGB(150, 153, 168), White = Color3.fromRGB(240, 240, 244),
 		SubText = Color3.fromRGB(135, 138, 152), ToggleOff = Color3.fromRGB(42, 44, 56), Knob = Color3.fromRGB(14, 14, 18),
-		Selected = Color3.fromRGB(35, 36, 43), IconBox = Color3.fromRGB(28, 29, 35), Check = Color3.fromRGB(228, 229, 235),
+		Selected = Color3.fromRGB(35, 36, 43), IconBox = Color3.fromRGB(28, 29, 35), Check = Color3.fromRGB(122, 138, 255), Accent = Color3.fromRGB(122, 138, 255),
 	}
 
 	local function create(className, props, parent)
@@ -263,7 +265,16 @@ do
 		Size = UDim2.fromOffset(DESIGN_W, DESIGN_H), BackgroundColor3 = C.Window, BorderSizePixel = 0, ClipsDescendants = true,
 	}, screenGui)
 	corner(main, 30)
-	stroke(main, Color3.fromRGB(46, 48, 58), 2)
+	local mainStroke = stroke(main, Color3.fromRGB(255, 255, 255), 2)
+	local strokeGrad = create("UIGradient", { Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(122, 138, 255)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(46, 48, 58)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 110, 255)),
+	}) }, mainStroke)
+	table.insert(connections, RunService.RenderStepped:Connect(function()
+		strokeGrad.Rotation = (os.clock() * 40) % 360 -- slow animated border
+	end))
+	UI.main = main
 
 	local uiScale = create("UIScale", { Scale = 1 }, main)
 	local function updateScale()
@@ -472,9 +483,9 @@ do
 		local area = create("TextButton", { Size = UDim2.new(1, -70, 0, 44), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 35, 0, 86), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, r)
 		local track = create("Frame", { Size = UDim2.new(1, 0, 0, 8), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.ToggleOff, BorderSizePixel = 0 }, area)
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
-		local fill = create("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = C.White, BorderSizePixel = 0 }, track)
+		local fill = create("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, track)
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }, fill)
-		local knob = create("Frame", { Size = UDim2.new(0, 34, 0, 34), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.White, BorderSizePixel = 0 }, track)
+		local knob = create("Frame", { Size = UDim2.new(0, 34, 0, 34), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, track)
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }, knob)
 		local function show(v)
 			local rel = math.clamp((v - minV) / (maxV - minV), 0, 1)
@@ -627,7 +638,14 @@ do
 			Text = text, TextSize = 22, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = true,
 		}, r)
 		corner(btn, 16)
-		btn.MouseButton1Click:Connect(function() callback(btn) end)
+		btn.AutoButtonColor = false
+		btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(46, 49, 70) }):Play() end)
+		btn.MouseLeave:Connect(function() TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = C.IconBox }):Play() end)
+		btn.MouseButton1Click:Connect(function()
+			btn.BackgroundColor3 = C.Accent
+			TweenService:Create(btn, TweenInfo.new(0.25), { BackgroundColor3 = C.IconBox }):Play()
+			callback(btn)
+		end)
 		return btn
 	end
 
@@ -957,6 +975,7 @@ do
 			notify("Orbit", v and "ON - orbiting the closest player" or "OFF", true)
 		end)
 		addInput(o, "Target Name (empty = closest)", "OrbitTarget", "player name...")
+		addCheckbox(o, "Stable Camera (watch the target)", "OrbitStableCam")
 		addSlider(o, "Orbit Speed (deg/s)", "OrbitSpeed", 100, 20000, "")
 		addSlider(o, "Radius", "OrbitRadius", 2, 40, " st")
 		addSlider(o, "Height", "OrbitHeight", -10, 20, " st")
@@ -985,12 +1004,31 @@ do
 			flash(btn, "Reset!", "Reset Character")
 		end)
 		finish(b)
+
+		local t = section(p.left, "Teleport & Spectate", 2, "■")
+		addInput(t, "Player Name", "TPName", "type part of a name...")
+		addButton(t, "Teleport To Player", function(btn)
+			flash(btn, Feat.findPlayer(Config.TPName) and "Teleported!" or "Not found", "Teleport To Player")
+			Feat.tpPlayer(Config.TPName)
+		end)
+		addCheckbox(t, "Spectate Player", "SpectateOn")
+		addCheckbox(t, "Click / Tap Teleport", "ClickTP", function(v)
+			notify("Click Teleport", v and "ON - tap the world to teleport" or "OFF", true)
+		end)
+		finish(t)
 	end, tabFail("Utility"))
 
 	-- sidebar entries -----------------------------------------------
 	local subButtons, catOf, iconOf = {}, {}, {}
 	local function selectPage(name)
-		for n, page in pairs(pages) do page.frame.Visible = (n == name) end
+		for n, page in pairs(pages) do
+			local show = (n == name)
+			if show and not page.frame.Visible then
+				page.frame.Position = UDim2.new(0, 0, 0, 22)
+				TweenService:Create(page.frame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = UDim2.new(0, 0, 0, 0) }):Play()
+			end
+			page.frame.Visible = show
+		end
 		for n, b in pairs(subButtons) do
 			local sel = (n == name)
 			b.btn.BackgroundTransparency = sel and 0 or 1
@@ -1025,7 +1063,7 @@ do
 			catOf[name], iconOf[name] = title, icon
 			local btn = create("TextButton", { Size = UDim2.new(1, 0, 0, 86), BackgroundColor3 = C.Selected, BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", AutoButtonColor = false, LayoutOrder = i }, subFrame)
 			corner(btn, 18)
-			local marker = create("Frame", { Size = UDim2.new(0, 5, 0, 44), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 2, 0.5, 0), BackgroundColor3 = C.White, BorderSizePixel = 0, Visible = false }, btn)
+			local marker = create("Frame", { Size = UDim2.new(0, 5, 0, 44), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 2, 0.5, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0, Visible = false }, btn)
 			corner(marker, 3)
 			local ic = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 40), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 26, 0.5, 0), Text = icon, TextSize = 28, Font = F.Med, TextColor3 = C.SubText }, btn)
 			local st = txt(btn, name, 26, C.SubText, F.Reg)
@@ -1061,6 +1099,12 @@ do
 	local function showMain(v)
 		main.Visible = v
 		logoBtn.Visible = not v
+		if v then -- pop-in animation
+			updateScale()
+			local full = uiScale.Scale
+			uiScale.Scale = full * 0.9
+			TweenService:Create(uiScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = full }):Play()
+		end
 	end
 	do
 		local dragging, moved, dragStart, startPos = false, false, nil, nil
@@ -2331,8 +2375,9 @@ task.spawn(function()
 	end
 end)
 
--- orbit: spins around the closest player (or the named one); the CFrame is set every Heartbeat so everyone sees it
-Feat.orbit = { angle = 0, target = nil, lastPick = 0 }
+-- ORBIT (no shake): the position is applied before physics, after physics and right before rendering,
+-- velocities are zeroed, the body is put in PlatformStand + no collision, and the camera watches the target.
+Feat.orbit = { angle = 0, target = nil, lastPick = 0, cf = nil, stand = false, lastClip = 0 }
 
 Feat.pickOrbit = function(origin)
 	local want = string.lower(Config.OrbitTarget or "")
@@ -2352,45 +2397,165 @@ Feat.pickOrbit = function(origin)
 	return best, bestD
 end
 
-table.insert(connections, RunService.Heartbeat:Connect(function(dt)
+Feat.orbitStop = function()
+	local o = Feat.orbit
+	o.target, o.cf = nil, nil
+	if o.stand then
+		o.stand = false
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			pcall(function()
+				hum.PlatformStand = false
+				hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+			end)
+		end
+	end
+end
+
+Feat.orbitApply = function()
+	local o = Feat.orbit
+	if not o.cf then return end
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	hrp.CFrame = o.cf
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
+end
+
+Feat.orbitUpdate = function(dt)
 	local o = Feat.orbit
 	if not Config.OrbitOn or Feat.walking or Config.Fly then
-		o.target = nil
+		if o.cf or o.stand then Feat.orbitStop() end
 		return
 	end
-	pcall(function()
-		local char = player.Character
-		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		if not (hrp and hum and hum.Health > 0) then return end
-		local now = os.clock()
-		if not (o.target and o.target.Parent) or now - o.lastPick > 0.2 then
-			o.lastPick = now
-			local cand, candD = Feat.pickOrbit(hrp.Position)
-			if cand then
-				if not (o.target and o.target.Parent) then
-					o.target = cand
-				elseif cand ~= o.target and candD < (o.target.Position - hrp.Position).Magnitude - 1.5 then
-					o.target = cand -- only switch when the new player is clearly closer
-				end
-			else
-				o.target = nil
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not (hrp and hum and hum.Health > 0) then
+		o.cf = nil
+		return
+	end
+	local now = os.clock()
+	if not (o.target and o.target.Parent) or now - o.lastPick > 0.2 then
+		o.lastPick = now
+		local cand, candD = Feat.pickOrbit(hrp.Position)
+		if cand then
+			if not (o.target and o.target.Parent) then
+				o.target = cand
+			elseif cand ~= o.target and candD < (o.target.Position - hrp.Position).Magnitude - 1.5 then
+				o.target = cand -- only switch when the new player is clearly closer
 			end
+		else
+			o.target = nil
 		end
-		local t = o.target
-		if not t then return end
-		o.angle = (o.angle + math.rad(Config.OrbitSpeed) * dt) % (math.pi * 2)
-		local tp = t.Position
-		local pos = tp + Vector3.new(math.cos(o.angle) * Config.OrbitRadius, Config.OrbitHeight, math.sin(o.angle) * Config.OrbitRadius)
-		hrp.CFrame = CFrame.lookAt(pos, Vector3.new(tp.X, pos.Y, tp.Z))
-		hrp.AssemblyLinearVelocity = Vector3.zero
-		hrp.AssemblyAngularVelocity = Vector3.zero
-	end)
+	end
+	local t = o.target
+	if not t then
+		o.cf = nil
+		return
+	end
+	if not o.stand then
+		o.stand = true
+		hum.PlatformStand = true
+	end
+	if now - o.lastClip > 0.25 then
+		o.lastClip = now
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
+		end
+	end
+	o.angle = (o.angle + math.rad(Config.OrbitSpeed) * dt) % (math.pi * 2)
+	local tp = t.Position
+	local pos = tp + Vector3.new(math.cos(o.angle) * Config.OrbitRadius, Config.OrbitHeight, math.sin(o.angle) * Config.OrbitRadius)
+	o.cf = CFrame.lookAt(pos, Vector3.new(tp.X, pos.Y, tp.Z))
+	Feat.orbitApply()
+end
+
+table.insert(connections, RunService.Stepped:Connect(function() pcall(Feat.orbitApply) end))
+table.insert(connections, RunService.Heartbeat:Connect(function(dt) pcall(Feat.orbitUpdate, dt) end))
+table.insert(connections, RunService.RenderStepped:Connect(function() pcall(Feat.orbitApply) end))
+
+-- camera: stable view while orbiting (watch the target) + spectate
+Feat.findPlayer = function(name)
+	name = string.lower(name or "")
+	if name == "" then return nil end
+	local best
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			local n, dn = string.lower(plr.Name), string.lower(plr.DisplayName)
+			if n == name or dn == name then return plr end
+			if not best and (string.find(n, name, 1, true) or string.find(dn, name, 1, true)) then best = plr end
+		end
+	end
+	return best
+end
+
+Feat.camera = function()
+	local cam = Workspace.CurrentCamera
+	if not cam then return end
+	local want
+	local o = Feat.orbit
+	if Config.OrbitOn and Config.OrbitStableCam and o.target and o.target.Parent and o.cf then
+		want = o.target.Parent:FindFirstChildOfClass("Humanoid")
+	elseif Config.SpectateOn then
+		local plr = Feat.findPlayer(Config.TPName)
+		local c = plr and plr.Character
+		want = c and c:FindFirstChildOfClass("Humanoid")
+	end
+	if want then
+		Feat.camOwned = true
+		if cam.CameraSubject ~= want then cam.CameraSubject = want end
+	elseif Feat.camOwned then
+		Feat.camOwned = false
+		local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if h then cam.CameraSubject = h end
+	end
+end
+table.insert(connections, RunService.RenderStepped:Connect(function() pcall(Feat.camera) end))
+
+-- teleport helpers
+Feat.tpPlayer = function(name)
+	local plr = Feat.findPlayer(name)
+	local c = plr and plr.Character
+	local r = c and c:FindFirstChild("HumanoidRootPart")
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if r and hrp then
+		hrp.CFrame = r.CFrame * CFrame.new(0, 0, 3)
+		notify("Teleport", "Teleported to " .. plr.DisplayName, true)
+		return true
+	end
+	notify("Teleport", "Player not found", true)
+	return false
+end
+
+table.insert(connections, UserInputService.InputBegan:Connect(function(input, gp)
+	if gp or not Config.ClickTP then return end
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+	local cam = Workspace.CurrentCamera
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not (cam and hrp) then return end
+	local m = UI.main
+	if m and m.Visible then -- ignore taps that land on the window
+		local ins = game:GetService("GuiService"):GetGuiInset()
+		local x, y = input.Position.X + ins.X, input.Position.Y + ins.Y
+		local p, s = m.AbsolutePosition, m.AbsoluteSize
+		if x >= p.X and x <= p.X + s.X and y >= p.Y and y <= p.Y + s.Y then return end
+	end
+	local ray = cam:ScreenPointToRay(input.Position.X, input.Position.Y)
+	local params = RaycastParams.new()
+	params.FilterDescendantsInstances = { player.Character }
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local hit = Workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
+	if hit then hrp.CFrame = CFrame.new(hit.Position + Vector3.new(0, 3.5, 0)) end
 end))
 
 -- undo everything when the script is unloaded
 Feat.cleanup = function()
 	Feat.stopFly()
+	Config.OrbitOn, Config.SpectateOn = false, false
+	pcall(Feat.orbitStop)
+	pcall(Feat.camera)
 	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if hum and Feat.orig.speed then pcall(function() hum.WalkSpeed = Feat.orig.speed end) end
 	if hum and Feat.orig.jump then
