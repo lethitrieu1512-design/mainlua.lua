@@ -66,6 +66,7 @@ local Config = {
 	-- movement
 	SpeedOn = false, WalkSpeedVal = 50, JumpOn = false, JumpPowerVal = 100, InfJump = false,
 	Noclip = false, Fly = false, FlySpeed = 80,
+	OrbitOn = false, OrbitSpeed = 2000, OrbitRadius = 8, OrbitHeight = 0, OrbitTarget = "",
 
 	-- utility
 	AntiAFK = true, Fullbright = false, FOVOn = false, FOVVal = 90,
@@ -125,7 +126,7 @@ end
 
 loadConfig() -- settings from last time
 -- risky toggles never start switched on
-Config.Fly, Config.Noclip, Config.AutoCollect, Config.WalkCollect = false, false, false, false
+Config.Fly, Config.Noclip, Config.AutoCollect, Config.WalkCollect, Config.OrbitOn = false, false, false, false, false
 
 local connections = {}
 local running = true
@@ -950,6 +951,16 @@ do
 		addSlider(b, "Fly Speed", "FlySpeed", 10, 300, "")
 		addCheckbox(b, "Noclip", "Noclip")
 		finish(b)
+
+		local o = section(p.left, "Orbit", 2, "▶")
+		addCheckbox(o, "Orbit (spin around target)", "OrbitOn", function(v)
+			notify("Orbit", v and "ON - orbiting the closest player" or "OFF", true)
+		end)
+		addInput(o, "Target Name (empty = closest)", "OrbitTarget", "player name...")
+		addSlider(o, "Orbit Speed (deg/s)", "OrbitSpeed", 100, 20000, "")
+		addSlider(o, "Radius", "OrbitRadius", 2, 40, " st")
+		addSlider(o, "Height", "OrbitHeight", -10, 20, " st")
+		finish(o)
 	end, tabFail("Movement"))
 
 	xpcall(function() -- Utility
@@ -2319,6 +2330,63 @@ task.spawn(function()
 		end
 	end
 end)
+
+-- orbit: spins around the closest player (or the named one); the CFrame is set every Heartbeat so everyone sees it
+Feat.orbit = { angle = 0, target = nil, lastPick = 0 }
+
+Feat.pickOrbit = function(origin)
+	local want = string.lower(Config.OrbitTarget or "")
+	local best, bestD
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			local c = plr.Character
+			local r = c and c:FindFirstChild("HumanoidRootPart")
+			local h = c and c:FindFirstChildOfClass("Humanoid")
+			if r and h and h.Health > 0 and (want == "" or string.find(string.lower(plr.Name), want, 1, true)
+				or string.find(string.lower(plr.DisplayName), want, 1, true)) then
+				local d = (r.Position - origin).Magnitude
+				if not bestD or d < bestD then best, bestD = r, d end
+			end
+		end
+	end
+	return best, bestD
+end
+
+table.insert(connections, RunService.Heartbeat:Connect(function(dt)
+	local o = Feat.orbit
+	if not Config.OrbitOn or Feat.walking or Config.Fly then
+		o.target = nil
+		return
+	end
+	pcall(function()
+		local char = player.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if not (hrp and hum and hum.Health > 0) then return end
+		local now = os.clock()
+		if not (o.target and o.target.Parent) or now - o.lastPick > 0.2 then
+			o.lastPick = now
+			local cand, candD = Feat.pickOrbit(hrp.Position)
+			if cand then
+				if not (o.target and o.target.Parent) then
+					o.target = cand
+				elseif cand ~= o.target and candD < (o.target.Position - hrp.Position).Magnitude - 1.5 then
+					o.target = cand -- only switch when the new player is clearly closer
+				end
+			else
+				o.target = nil
+			end
+		end
+		local t = o.target
+		if not t then return end
+		o.angle = (o.angle + math.rad(Config.OrbitSpeed) * dt) % (math.pi * 2)
+		local tp = t.Position
+		local pos = tp + Vector3.new(math.cos(o.angle) * Config.OrbitRadius, Config.OrbitHeight, math.sin(o.angle) * Config.OrbitRadius)
+		hrp.CFrame = CFrame.lookAt(pos, Vector3.new(tp.X, pos.Y, tp.Z))
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+	end)
+end))
 
 -- undo everything when the script is unloaded
 Feat.cleanup = function()
