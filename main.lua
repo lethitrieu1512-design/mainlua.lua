@@ -213,8 +213,8 @@ end
 local screenGui
 
 do
-	local DESIGN_W, DESIGN_H = 1816, 950
-	local SIDE_W, HEAD_H, PROFILE_H = 370, 150, 110
+	local DESIGN_W, DESIGN_H = 1515, 860
+	local SIDE_W, HEAD_H, PROFILE_H = 415, 147, 120
 
 	local F = {
 		Reg = Enum.Font.Gotham, Med = Enum.Font.GothamMedium, Semi = Enum.Font.GothamSemibold,
@@ -263,24 +263,16 @@ do
 
 	local main = create("Frame", {
 		Name = "Main", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(DESIGN_W, DESIGN_H), BackgroundColor3 = C.Window, BorderSizePixel = 0, ClipsDescendants = true,
+		Size = UDim2.fromOffset(DESIGN_W, DESIGN_H), BackgroundColor3 = C.Window, BackgroundTransparency = 0.08, BorderSizePixel = 0,
 	}, screenGui)
 	corner(main, 30)
-	local mainStroke = stroke(main, Color3.fromRGB(255, 255, 255), 2)
-	local strokeGrad = create("UIGradient", { Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(122, 138, 255)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(30, 38, 40)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(40, 140, 255)),
-	}) }, mainStroke)
-	table.insert(connections, RunService.RenderStepped:Connect(function()
-		strokeGrad.Rotation = (os.clock() * 40) % 360 -- slow animated border
-	end))
+	stroke(main, Color3.fromRGB(32, 72, 72), 2)
 	UI.main = main
 
 	local uiScale = create("UIScale", { Scale = 1 }, main)
 	local function updateScale()
 		local s = screenGui.AbsoluteSize
-		if s.X > 0 and s.Y > 0 then uiScale.Scale = math.min(s.X * 0.78 / DESIGN_W, s.Y * 0.88 / DESIGN_H) end
+		if s.X > 0 and s.Y > 0 then uiScale.Scale = math.min(s.X * 0.66 / DESIGN_W, s.Y * 0.80 / DESIGN_H) * (UI.scaleMul or 1) end
 	end
 	updateScale()
 	table.insert(connections, screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateScale))
@@ -305,80 +297,109 @@ do
 		end))
 	end
 
-	-- header (full width, like the reference) ------------------------
+	-- header (same layout as the Vxeze hub) -----------------------------
 	local header = create("Frame", { Size = UDim2.new(1, 0, 0, HEAD_H), BackgroundTransparency = 1, Active = true }, main)
 	makeDraggable(header, main, true)
 	create("TextLabel", {
-		BackgroundTransparency = 1, Text = "Item ESP Hub [ Free ]", TextSize = 42, Font = F.Bold, TextColor3 = C.White,
-		TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 56, 0, 24), Size = UDim2.new(0, 760, 0, 56),
+		BackgroundTransparency = 1, Text = "Item ESP Hub [ Free ]", TextSize = 46, Font = F.Semi, TextColor3 = C.White,
+		TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 55, 0, 26), Size = UDim2.new(0, 800, 0, 60),
 	}, header)
-	create("TextLabel", {
-		BackgroundTransparency = 1, Text = "Jujutsu Shenanigans  -  v1", TextSize = 28, Font = F.Reg, TextColor3 = C.SubText,
-		TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 56, 0, 82), Size = UDim2.new(0, 760, 0, 40),
+	local subTitle = create("TextLabel", {
+		BackgroundTransparency = 1, Text = "", TextSize = 32, Font = F.Reg, TextColor3 = C.SubText,
+		TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 55, 0, 84), Size = UDim2.new(0, 800, 0, 40),
 	}, header)
-	local badge = create("ImageLabel", {
-		Size = UDim2.fromOffset(104, 104), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 10),
-		BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Image = "", ZIndex = 5,
-	}, main)
-	create("UICorner", { CornerRadius = UDim.new(1, 0) }, badge)
-	stroke(badge, Color3.fromRGB(60, 140, 255), 4)
-	loadAvatar(badge)
-
-	local minBtn = create("TextButton", {
-		Size = UDim2.fromOffset(70, 70), Position = UDim2.new(0, DESIGN_W - 40 - 70 - 70, 0, 36), BackgroundTransparency = 1,
-		Text = "—", TextSize = 40, Font = F.Bold, TextColor3 = C.BarLight, AutoButtonColor = false,
-	}, header)
-	local closeBtn = create("TextButton", {
-		Size = UDim2.fromOffset(70, 70), Position = UDim2.new(0, DESIGN_W - 40 - 70, 0, 36), BackgroundTransparency = 1,
-		Text = "✕", TextSize = 36, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = false,
-	}, header)
-	UI.closeBtn = closeBtn
-
-	local accentLine = create("Frame", { Size = UDim2.new(1, -40, 0, 3), Position = UDim2.new(0, 20, 0, HEAD_H), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, main)
-	create("UIGradient", { Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.15, 0.1), NumberSequenceKeypoint.new(0.85, 0.1), NumberSequenceKeypoint.new(1, 1),
-	}) }, accentLine)
-
-	-- sidebar ------------------------------------------------------
-	local sidebar = create("Frame", { Position = UDim2.new(0, 0, 0, HEAD_H + 3), Size = UDim2.new(0, SIDE_W, 1, -(HEAD_H + 3)), BackgroundTransparency = 1, BorderSizePixel = 0 }, main)
-	create("Frame", { Size = UDim2.new(0, 2, 1, -60), Position = UDim2.new(1, -2, 0, 24), BackgroundColor3 = C.Line, BorderSizePixel = 0 }, sidebar)
-
-	local sideScroll = create("ScrollingFrame", {
-		Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 1, -PROFILE_H), BackgroundTransparency = 1,
-		BorderSizePixel = 0, ScrollBarThickness = 0, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
-	}, sidebar)
-	create("UIPadding", { PaddingTop = UDim.new(0, 16), PaddingLeft = UDim.new(0, 22), PaddingRight = UDim.new(0, 26), PaddingBottom = UDim.new(0, 12) }, sideScroll)
-	create("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }, sideScroll)
-
-	-- "Hide Username" support
-	local usernameLabels = {}
+	-- "Hide Username" support (the name lives in the subtitle)
+	local usernameLabels = { { label = subTitle, real = "Jujutsu Shenanigans  -  @" .. player.Name, hidden = "Jujutsu Shenanigans  -  @********" } }
 	function UI.applyUsername()
 		for _, h in ipairs(usernameLabels) do
 			h.label.Text = Config.HideUsername and h.hidden or h.real
 		end
 	end
 
-	local profileBar = create("Frame", { Size = UDim2.new(1, -2, 0, PROFILE_H), Position = UDim2.new(0, 0, 1, -PROFILE_H), BackgroundTransparency = 1, BorderSizePixel = 0 }, sidebar)
-	local pAvatar = create("ImageLabel", { Size = UDim2.fromOffset(66, 66), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 28, 0.5, 0), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Image = "" }, profileBar)
-	create("UICorner", { CornerRadius = UDim.new(1, 0) }, pAvatar)
-	stroke(pAvatar, C.Accent, 2)
-	loadAvatar(pAvatar)
-	local pName = txt(profileBar, player.Name, 24, C.White, F.Bold)
-	pName.Position = UDim2.new(0, 112, 0.5, -14)
-	pName.Size = UDim2.new(1, -130, 0, 32)
-	table.insert(usernameLabels, { label = pName, real = player.Name, hidden = "Hidden" })
-	local pGame = txt(profileBar, "Free", 20, C.Accent, F.Reg)
-	pGame.Position = UDim2.new(0, 112, 0.5, 20)
-	pGame.Size = UDim2.new(1, -130, 0, 28)
+	-- round avatar badge, top-center, sticking out of the window like the reference
+	local badge = create("ImageLabel", {
+		Size = UDim2.fromOffset(96, 96), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, -12),
+		BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Image = "", ZIndex = 5,
+	}, main)
+	create("UICorner", { CornerRadius = UDim.new(1, 0) }, badge)
+	stroke(badge, Color3.fromRGB(58, 140, 255), 4)
+	loadAvatar(badge)
+
+	-- header buttons (drawn with frames so no font glyph is needed)
+	local function hbtn(offsetFromRight)
+		return create("TextButton", {
+			Size = UDim2.fromOffset(70, 70), Position = UDim2.new(0, DESIGN_W - offsetFromRight, 0, 38),
+			BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+		}, header)
+	end
+	local searchBtn, minBtn, maxBtn, closeBtn = hbtn(335), hbtn(250), hbtn(165), hbtn(80)
+	do -- search icon
+		local ring = create("Frame", { Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(16, 14), BackgroundTransparency = 1 }, searchBtn)
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }, ring)
+		stroke(ring, C.BarLight, 3)
+		create("Frame", { Size = UDim2.fromOffset(15, 3), Position = UDim2.fromOffset(38, 46), Rotation = 45, BackgroundColor3 = C.BarLight, BorderSizePixel = 0 }, searchBtn)
+		-- minimize
+		create("Frame", { Size = UDim2.fromOffset(30, 3), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundColor3 = C.BarLight, BorderSizePixel = 0 }, minBtn)
+		-- maximize
+		local sq = create("Frame", { Size = UDim2.fromOffset(28, 28), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundTransparency = 1 }, maxBtn)
+		corner(sq, 7)
+		stroke(sq, C.BarLight, 3)
+		-- close
+		for _, rot in ipairs({ 45, -45 }) do
+			create("Frame", { Size = UDim2.fromOffset(34, 3), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), Rotation = rot, BackgroundColor3 = C.BarLight, BorderSizePixel = 0 }, closeBtn)
+		end
+	end
+	UI.closeBtn = closeBtn
+	UI.scaleMul = 1
+	maxBtn.MouseButton1Click:Connect(function()
+		UI.scaleMul = (UI.scaleMul == 1) and 1.18 or 1
+		updateScale()
+	end)
+	local searchBox = create("TextBox", {
+		Visible = false, Size = UDim2.fromOffset(360, 62), Position = UDim2.new(0, DESIGN_W - 335 - 380, 0, 42),
+		BackgroundColor3 = C.Input, BorderSizePixel = 0, Text = "", PlaceholderText = "Search tab...", PlaceholderColor3 = C.SubText,
+		TextColor3 = C.White, TextSize = 28, Font = F.Reg, ClearTextOnFocus = true,
+	}, header)
+	corner(searchBox, 18)
+	searchBtn.MouseButton1Click:Connect(function()
+		searchBox.Visible = not searchBox.Visible
+		if searchBox.Visible then searchBox:CaptureFocus() end
+	end)
+	searchBox.FocusLost:Connect(function()
+		if UI.search then UI.search(searchBox.Text) end
+		searchBox.Visible = false
+	end)
+
+	-- teal line under the header (fades at both ends)
+	local accentLine = create("Frame", { Size = UDim2.new(1, -20, 0, 3), Position = UDim2.new(0, 10, 0, HEAD_H), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, main)
+	create("UIGradient", { Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.12, 0.25), NumberSequenceKeypoint.new(0.88, 0.25), NumberSequenceKeypoint.new(1, 1),
+	}) }, accentLine)
+
+	-- sidebar ------------------------------------------------------
+	local sidebar = create("Frame", { Position = UDim2.new(0, 0, 0, HEAD_H + 3), Size = UDim2.new(0, SIDE_W, 1, -(HEAD_H + 3)), BackgroundTransparency = 1, BorderSizePixel = 0 }, main)
+	create("Frame", { Size = UDim2.new(0, 2, 1, -50), Position = UDim2.new(1, -2, 0, 14), BackgroundColor3 = C.Line, BorderSizePixel = 0 }, sidebar)
+	local sideScroll = create("ScrollingFrame", {
+		Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 1, -PROFILE_H), BackgroundTransparency = 1,
+		BorderSizePixel = 0, ScrollBarThickness = 0, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
+	}, sidebar)
+	create("UIPadding", { PaddingTop = UDim.new(0, 18), PaddingLeft = UDim.new(0, 40), PaddingRight = UDim.new(0, 44) }, sideScroll)
+	create("UIListLayout", { Padding = UDim.new(0, 11), SortOrder = Enum.SortOrder.LayoutOrder }, sideScroll)
+	local heartBtn = create("TextButton", {
+		Size = UDim2.fromOffset(82, 80), Position = UDim2.new(0, 40, 1, -(PROFILE_H - 14)), BackgroundColor3 = C.Selected, BorderSizePixel = 0,
+		Text = "♥", TextSize = 38, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = false,
+	}, sidebar)
+	corner(heartBtn, 22)
+	heartBtn.MouseButton1Click:Connect(function() if UI.openPage then UI.openPage("Settings") end end)
 
 	-- content: pill tabs on top, pages below ---------------------------
 	local CONTENT_W = DESIGN_W - SIDE_W
+	local TAB_H = 146
 	local content = create("Frame", { Position = UDim2.new(0, SIDE_W, 0, HEAD_H + 3), Size = UDim2.new(1, -SIDE_W, 1, -(HEAD_H + 3)), BackgroundTransparency = 1 }, main)
-	local TAB_H = 118
 	local tabBar = create("Frame", { Size = UDim2.new(1, 0, 0, TAB_H), BackgroundTransparency = 1 }, content)
-	create("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 14), VerticalAlignment = Enum.VerticalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }, tabBar)
-	create("UIPadding", { PaddingLeft = UDim.new(0, 28) }, tabBar)
-	local pageHolder = create("Frame", { Position = UDim2.new(0, 0, 0, TAB_H), Size = UDim2.new(1, 0, 1, -TAB_H), BackgroundTransparency = 1 }, content)
+	create("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 12), VerticalAlignment = Enum.VerticalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }, tabBar)
+	create("UIPadding", { PaddingLeft = UDim.new(0, 44) }, tabBar)
+	local pageHolder = create("Frame", { Position = UDim2.new(0, 0, 0, TAB_H), Size = UDim2.new(1, -16, 1, -(TAB_H + 24)), BackgroundTransparency = 1 }, content)
 
 	-- pages / sections / rows -----------------------------------------
 	local pages = {}
@@ -387,25 +408,28 @@ do
 			Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.Bar,
 			AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), Visible = false,
 		}, pageHolder)
-		local col = create("Frame", { Size = UDim2.new(0, CONTENT_W - 56, 0, 0), Position = UDim2.new(0, 28, 0, 0), BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.Y }, sf)
-		create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, col)
+		local col = create("Frame", { Size = UDim2.new(0, CONTENT_W - 118, 0, 0), Position = UDim2.new(0, 48, 0, 0), BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.Y }, sf)
+		create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, col)
 		pages[name] = { frame = sf, left = col, right = col } -- one wide column, like the reference
 		return pages[name]
 	end
 
+	-- section header: ──── icon  Title ────          v
 	local function section(parent, title, order, icon)
 		local n = (parent:GetAttribute("n") or 0) + 1
 		parent:SetAttribute("n", n)
 		local s = create("Frame", { Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, BorderSizePixel = 0, AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = n }, parent)
-		create("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }, s)
+		create("UIListLayout", { Padding = UDim.new(0, 16), SortOrder = Enum.SortOrder.LayoutOrder }, s)
 		local obj = { frame = s, n = 0, collapsed = false, rows = {}, dividers = {} }
-		local hdr = create("TextButton", { Size = UDim2.new(1, 0, 0, 84), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, LayoutOrder = 0 }, s)
-		local mid = create("Frame", { Size = UDim2.new(0, 0, 0, 44), AutomaticSize = Enum.AutomaticSize.X, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundTransparency = 1 }, hdr)
-		create("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 18), SortOrder = Enum.SortOrder.LayoutOrder }, mid)
-		create("Frame", { Size = UDim2.fromOffset(96, 3), BackgroundColor3 = C.Accent, BorderSizePixel = 0, LayoutOrder = 1 }, mid)
-		create("TextLabel", { Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X, BackgroundTransparency = 1, Text = (icon or "◎") .. "  " .. title, TextSize = 31, Font = F.Semi, TextColor3 = C.White, LayoutOrder = 2 }, mid)
-		create("Frame", { Size = UDim2.fromOffset(96, 3), BackgroundColor3 = C.Accent, BorderSizePixel = 0, LayoutOrder = 3 }, mid)
-		local chev = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 40), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -30, 0.5, 0), Text = "v", TextSize = 22, Font = F.Bold, TextColor3 = C.BarLight }, hdr)
+		local hdr = create("TextButton", { Size = UDim2.new(1, 0, 0, 112), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, LayoutOrder = 0 }, s)
+		local mid = create("Frame", { Size = UDim2.new(0, 0, 0, 50), AutomaticSize = Enum.AutomaticSize.X, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundTransparency = 1 }, hdr)
+		create("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 20), SortOrder = Enum.SortOrder.LayoutOrder }, mid)
+		local l1 = create("Frame", { Size = UDim2.fromOffset(110, 3), BackgroundColor3 = C.Accent, BorderSizePixel = 0, LayoutOrder = 1 }, mid)
+		create("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0) }) }, l1)
+		create("TextLabel", { Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X, BackgroundTransparency = 1, Text = (icon or "◎") .. "  " .. title, TextSize = 36, Font = F.Med, TextColor3 = C.White, LayoutOrder = 2 }, mid)
+		local l2 = create("Frame", { Size = UDim2.fromOffset(110, 3), BackgroundColor3 = C.Accent, BorderSizePixel = 0, LayoutOrder = 3 }, mid)
+		create("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) }) }, l2)
+		local chev = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(44, 44), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -150, 0.5, 0), Text = "v", TextSize = 26, Font = F.Bold, TextColor3 = C.BarLight }, hdr)
 		hdr.MouseButton1Click:Connect(function()
 			obj.collapsed = not obj.collapsed
 			chev.Text = obj.collapsed and ">" or "v"
@@ -414,27 +438,25 @@ do
 		return obj
 	end
 
+	-- every option is a dark rounded card with a teal bar on the left
 	local function row(sec, height)
-		local r = create("Frame", { Size = UDim2.new(1, 0, 0, height), BackgroundColor3 = C.Panel, BorderSizePixel = 0, LayoutOrder = sec.n + 1 }, sec.frame)
-		corner(r, 22)
-		create("Frame", { Size = UDim2.new(0, 5, 0, math.max(height - 40, 24)), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, r)
-		local div = create("Frame", { Size = UDim2.new(1, -62, 0, 1), Position = UDim2.new(0, 31, 1, -1), BackgroundTransparency = 1, BorderSizePixel = 0 }, r)
+		local r = create("Frame", { Size = UDim2.new(1, 0, 0, height), BackgroundColor3 = C.Panel, BackgroundTransparency = 0.05, BorderSizePixel = 0, LayoutOrder = sec.n + 1 }, sec.frame)
+		corner(r, 26)
+		local bar = create("Frame", { Size = UDim2.new(0, 8, 0, math.clamp(height * 0.46, 44, 84)), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 34, 0.5, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, r)
+		corner(bar, 4)
 		sec.n = sec.n + 1
 		table.insert(sec.rows, r)
-		table.insert(sec.dividers, div)
 		return r
 	end
 
 	local function finish(sec)
-		local last = sec.dividers[#sec.dividers]
-		if last then last.Visible = false end
-		create("Frame", { Size = UDim2.new(1, 0, 0, 10), BackgroundTransparency = 1, LayoutOrder = 9999 }, sec.frame)
+		create("Frame", { Size = UDim2.new(1, 0, 0, 8), BackgroundTransparency = 1, LayoutOrder = 9999 }, sec.frame)
 	end
 
 	local function rowLabel(r, name, cy)
-		local l = txt(r, name, 23, C.White, F.Semi)
-		l.Position = UDim2.new(0, 31, 0, cy)
-		l.Size = UDim2.new(1, -170, 0, 33)
+		local l = txt(r, name, 34, C.White, F.Med)
+		l.Position = UDim2.new(0, 72, 0, cy)
+		l.Size = UDim2.new(1, -330, 0, 44)
 		return l
 	end
 
@@ -446,26 +468,21 @@ do
 	end
 
 	local function addCheckbox(sec, name, key, onChange)
-		local r = row(sec, 82)
-		local box = create("TextButton", {
-			Size = UDim2.fromOffset(44, 44), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 31, 0, 41),
-			BackgroundColor3 = Config[key] and C.Check or C.IconBox, BorderSizePixel = 0, Text = "", AutoButtonColor = false,
+		local r = row(sec, 112)
+		rowLabel(r, name, 56).Size = UDim2.new(1, -260, 0, 44)
+		local track = create("TextButton", {
+			Size = UDim2.fromOffset(100, 54), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -44, 0.5, 0),
+			BackgroundColor3 = Config[key] and C.Accent or C.ToggleOff, BorderSizePixel = 0, Text = "", AutoButtonColor = false,
 		}, r)
-		corner(box, 12)
-		local mark = create("Frame", { Size = UDim2.fromOffset(24, 24), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundTransparency = 1, Visible = Config[key] }, box)
-		local a = create("Frame", { Size = UDim2.fromOffset(10, 4), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(6, 15), Rotation = 45, BackgroundColor3 = C.Knob, BorderSizePixel = 0 }, mark)
-		corner(a, 2)
-		local b = create("Frame", { Size = UDim2.fromOffset(18, 4), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(14, 12), Rotation = -45, BackgroundColor3 = C.Knob, BorderSizePixel = 0 }, mark)
-		corner(b, 2)
-		local l = txt(r, name, 23, C.White, F.Semi)
-		l.Position = UDim2.new(0, 98, 0, 41)
-		l.Size = UDim2.new(1, -130, 0, 33)
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
+		local knob = create("Frame", { Size = UDim2.fromOffset(42, 42), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, Config[key] and 52 or 6, 0.5, 0), BackgroundColor3 = C.White, BorderSizePixel = 0 }, track)
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }, knob)
 		local function apply(v)
-			mark.Visible = v
-			TweenService:Create(box, TweenInfo.new(0.12), { BackgroundColor3 = v and C.Check or C.IconBox }):Play()
+			TweenService:Create(track, TweenInfo.new(0.14), { BackgroundColor3 = v and C.Accent or C.ToggleOff }):Play()
+			TweenService:Create(knob, TweenInfo.new(0.14), { Position = UDim2.new(0, v and 52 or 6, 0.5, 0) }):Play()
 		end
 		table.insert(syncers, function() apply(Config[key]) end)
-		box.MouseButton1Click:Connect(function()
+		track.MouseButton1Click:Connect(function()
 			local v = not Config[key]
 			Config[key] = v
 			apply(v)
@@ -479,18 +496,18 @@ do
 	end
 
 	local function addSlider(sec, name, key, minV, maxV, suffix, onChange, zeroText)
-		local r = row(sec, 124)
-		rowLabel(r, name, 34)
-		local valLabel = txt(r, "", 20, C.White, F.Bold, Enum.TextXAlignment.Right)
+		local r = row(sec, 152)
+		rowLabel(r, name, 46)
+		local valLabel = txt(r, "", 31, C.Accent, F.Semi, Enum.TextXAlignment.Right)
 		valLabel.AnchorPoint = Vector2.new(1, 0.5)
-		valLabel.Size = UDim2.new(0, 160, 0, 26)
-		valLabel.Position = UDim2.new(1, -31, 0, 34)
-		local area = create("TextButton", { Size = UDim2.new(1, -70, 0, 44), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 35, 0, 86), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, r)
-		local track = create("Frame", { Size = UDim2.new(1, 0, 0, 8), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.ToggleOff, BorderSizePixel = 0 }, area)
+		valLabel.Size = UDim2.new(0, 280, 0, 40)
+		valLabel.Position = UDim2.new(1, -50, 0, 46)
+		local area = create("TextButton", { Size = UDim2.new(1, -140, 0, 56), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 72, 0, 110), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, r)
+		local track = create("Frame", { Size = UDim2.new(1, 0, 0, 10), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.ToggleOff, BorderSizePixel = 0 }, area)
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
 		local fill = create("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, track)
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }, fill)
-		local knob = create("Frame", { Size = UDim2.new(0, 34, 0, 34), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, track)
+		local knob = create("Frame", { Size = UDim2.fromOffset(38, 38), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.White, BorderSizePixel = 0 }, track)
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }, knob)
 		local function show(v)
 			local rel = math.clamp((v - minV) / (maxV - minV), 0, 1)
@@ -523,14 +540,13 @@ do
 	end
 
 	local function addColor(sec, name, key, onChange)
-		local r = row(sec, 90)
-		local l = rowLabel(r, name, 45)
-		l.Size = UDim2.new(1, -290, 0, 33)
-		local box = create("TextButton", { Size = UDim2.new(0, 232, 0, 64), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -24, 0, 45), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = "", AutoButtonColor = true }, r)
-		corner(box, 16)
-		local swatch = create("Frame", { Size = UDim2.new(0, 34, 0, 34), Position = UDim2.new(0, 16, 0.5, -17), BackgroundColor3 = Config[key], BorderSizePixel = 0 }, box)
-		corner(swatch, 9)
-		local hex = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -66, 1, 0), Position = UDim2.new(0, 62, 0, 0), Text = hexOf(Config[key]), TextSize = 20, Font = F.Reg, TextColor3 = C.SubText, TextXAlignment = Enum.TextXAlignment.Left }, box)
+		local r = row(sec, 112)
+		rowLabel(r, name, 56).Size = UDim2.new(1, -400, 0, 44)
+		local box = create("TextButton", { Size = UDim2.new(0, 250, 0, 68), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -40, 0.5, 0), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = "", AutoButtonColor = true }, r)
+		corner(box, 18)
+		local swatch = create("Frame", { Size = UDim2.new(0, 38, 0, 38), Position = UDim2.new(0, 18, 0.5, -19), BackgroundColor3 = Config[key], BorderSizePixel = 0 }, box)
+		corner(swatch, 10)
+		local hex = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -74, 1, 0), Position = UDim2.new(0, 70, 0, 0), Text = hexOf(Config[key]), TextSize = 24, Font = F.Reg, TextColor3 = C.SubText, TextXAlignment = Enum.TextXAlignment.Left }, box)
 		local palette = {
 			Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 140, 28), Color3.fromRGB(255, 220, 0), Color3.fromRGB(0, 255, 120),
 			Color3.fromRGB(0, 230, 230), Color3.fromRGB(80, 170, 255), Color3.fromRGB(170, 80, 255), Color3.fromRGB(255, 120, 200), Color3.fromRGB(240, 240, 244),
@@ -550,14 +566,14 @@ do
 	end
 
 	local function addInput(sec, name, key, placeholder, onChange)
-		local r = row(sec, 136)
-		rowLabel(r, name, 34)
-		local box = create("Frame", { Size = UDim2.new(1, -62, 0, 58), Position = UDim2.new(0, 31, 0, 62), BackgroundColor3 = C.Input, BorderSizePixel = 0 }, r)
-		corner(box, 16)
-		stroke(box, Color3.fromRGB(40, 42, 54), 1)
+		local r = row(sec, 176)
+		rowLabel(r, name, 46)
+		local box = create("Frame", { Size = UDim2.new(1, -112, 0, 68), Position = UDim2.new(0, 72, 0, 84), BackgroundColor3 = C.Input, BorderSizePixel = 0 }, r)
+		corner(box, 18)
+		stroke(box, C.Line, 1)
 		local tb = create("TextBox", {
-			BackgroundTransparency = 1, Size = UDim2.new(1, -30, 1, 0), Position = UDim2.new(0, 15, 0, 0), Text = Config[key],
-			PlaceholderText = placeholder, PlaceholderColor3 = C.SubText, TextColor3 = C.White, TextSize = 20, Font = F.Reg,
+			BackgroundTransparency = 1, Size = UDim2.new(1, -34, 1, 0), Position = UDim2.new(0, 17, 0, 0), Text = Config[key],
+			PlaceholderText = placeholder, PlaceholderColor3 = C.SubText, TextColor3 = C.White, TextSize = 26, Font = F.Reg,
 			TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
 		}, box)
 		table.insert(syncers, function() tb.Text = Config[key] end)
@@ -569,33 +585,33 @@ do
 	end
 
 	local function addDropdown(sec, name, key, options, onChange)
-		local baseH, itemH = 136, 56
+		local baseH, itemH = 176, 64
 		local r = row(sec, baseH)
-		rowLabel(r, name, 34)
-		local box = create("TextButton", { Size = UDim2.new(1, -62, 0, 64), Position = UDim2.new(0, 31, 0, 62), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = "", AutoButtonColor = false }, r)
-		corner(box, 16)
-		local cur = txt(box, Config[key], 21, C.White, F.Reg)
-		cur.Position = UDim2.new(0, 24, 0.5, 0)
-		cur.Size = UDim2.new(1, -90, 0, 30)
-		local arrow = txt(box, "v", 16, C.BarLight, F.Bold, Enum.TextXAlignment.Center)
+		rowLabel(r, name, 46)
+		local box = create("TextButton", { Size = UDim2.new(1, -112, 0, 70), Position = UDim2.new(0, 72, 0, 84), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = "", AutoButtonColor = false }, r)
+		corner(box, 18)
+		local cur = txt(box, Config[key], 27, C.White, F.Reg)
+		cur.Position = UDim2.new(0, 26, 0.5, 0)
+		cur.Size = UDim2.new(1, -90, 0, 34)
+		local arrow = txt(box, "v", 20, C.BarLight, F.Bold, Enum.TextXAlignment.Center)
 		arrow.AnchorPoint = Vector2.new(0.5, 0.5)
-		arrow.Size = UDim2.new(0, 24, 0, 24)
-		arrow.Position = UDim2.new(1, -34, 0.5, 0)
-		local list = create("Frame", { Size = UDim2.new(1, -62, 0, #options * itemH), Position = UDim2.new(0, 31, 0, baseH - 4), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Visible = false }, r)
-		corner(list, 16)
+		arrow.Size = UDim2.new(0, 30, 0, 30)
+		arrow.Position = UDim2.new(1, -36, 0.5, 0)
+		local list = create("Frame", { Size = UDim2.new(1, -112, 0, #options * itemH), Position = UDim2.new(0, 72, 0, baseH - 4), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Visible = false }, r)
+		corner(list, 18)
 		local open = false
 		local function setOpen(v)
 			open = v
 			list.Visible = v
 			arrow.Text = v and "^" or "v"
-			r.Size = UDim2.new(1, 0, 0, v and (baseH + #options * itemH + 12) or baseH)
+			r.Size = UDim2.new(1, 0, 0, v and (baseH + #options * itemH + 14) or baseH)
 		end
 		for i, opt in ipairs(options) do
 			local b = create("TextButton", {
 				Size = UDim2.new(1, 0, 0, itemH), Position = UDim2.new(0, 0, 0, (i - 1) * itemH), BackgroundTransparency = 1,
-				Text = opt, TextSize = 21, Font = F.Reg, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false,
+				Text = opt, TextSize = 27, Font = F.Reg, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false,
 			}, list)
-			create("UIPadding", { PaddingLeft = UDim.new(0, 24) }, b)
+			create("UIPadding", { PaddingLeft = UDim.new(0, 26) }, b)
 			b.MouseButton1Click:Connect(function()
 				Config[key] = opt
 				cur.Text = opt
@@ -608,14 +624,13 @@ do
 	end
 
 	local function addKeybind(sec, name, key, onChange)
-		local r = row(sec, 90)
-		local l = rowLabel(r, name, 45)
-		l.Size = UDim2.new(1, -250, 0, 33)
+		local r = row(sec, 112)
+		rowLabel(r, name, 56).Size = UDim2.new(1, -330, 0, 44)
 		local btn = create("TextButton", {
-			Size = UDim2.new(0, 190, 0, 66), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -24, 0, 45),
-			BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = Config[key], TextSize = 22, Font = F.Med, TextColor3 = C.White, AutoButtonColor = true,
+			Size = UDim2.new(0, 210, 0, 70), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -40, 0.5, 0),
+			BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = Config[key], TextSize = 26, Font = F.Med, TextColor3 = C.White, AutoButtonColor = true,
 		}, r)
-		corner(btn, 16)
+		corner(btn, 18)
 		local waiting = false
 		table.insert(syncers, function() btn.Text = Config[key] end)
 		btn.MouseButton1Click:Connect(function()
@@ -635,31 +650,39 @@ do
 		end))
 	end
 
+	-- whole card is the button
 	local function addButton(sec, text, callback)
-		local r = row(sec, 88)
-		sec.dividers[#sec.dividers].Visible = false
+		local r = row(sec, 104)
 		local btn = create("TextButton", {
-			Size = UDim2.new(1, -62, 0, 68), Position = UDim2.new(0, 31, 0, 10), BackgroundColor3 = C.IconBox, BorderSizePixel = 0,
-			Text = text, TextSize = 22, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = true,
+			Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = text, TextSize = 34, Font = F.Med, TextColor3 = C.White, AutoButtonColor = false,
 		}, r)
-		corner(btn, 16)
-		btn.AutoButtonColor = false
-		btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(32, 54, 56) }):Play() end)
-		btn.MouseLeave:Connect(function() TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = C.IconBox }):Play() end)
+		btn.MouseEnter:Connect(function() TweenService:Create(r, TweenInfo.new(0.12), { BackgroundColor3 = C.Selected }):Play() end)
+		btn.MouseLeave:Connect(function() TweenService:Create(r, TweenInfo.new(0.15), { BackgroundColor3 = C.Panel }):Play() end)
 		btn.MouseButton1Click:Connect(function()
-			btn.BackgroundColor3 = C.Accent
-			TweenService:Create(btn, TweenInfo.new(0.25), { BackgroundColor3 = C.IconBox }):Play()
+			r.BackgroundColor3 = Color3.fromRGB(24, 70, 70)
+			TweenService:Create(r, TweenInfo.new(0.3), { BackgroundColor3 = C.Panel }):Play()
 			callback(btn)
 		end)
 		return btn
 	end
 
-	local function addInfo(sec, text)
-		local r = row(sec, 84)
-		sec.dividers[#sec.dividers].Visible = false
-		local box = create("Frame", { Size = UDim2.new(1, -62, 0, 68), Position = UDim2.new(0, 31, 0, 8), BackgroundColor3 = C.IconBox, BorderSizePixel = 0 }, r)
-		corner(box, 16)
-		return create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Text = text, TextSize = 22, Font = F.Bold, TextColor3 = C.White }, box)
+	-- info card: white title, teal value (just a white line when no title is given)
+	local function addInfo(sec, text, title)
+		if title then
+			local r = row(sec, 164)
+			local t = txt(r, title, 38, C.White, F.Med)
+			t.Position = UDim2.new(0, 72, 0, 50)
+			t.Size = UDim2.new(1, -110, 0, 48)
+			local v = txt(r, text, 35, C.Accent, F.Med)
+			v.Position = UDim2.new(0, 72, 0, 116)
+			v.Size = UDim2.new(1, -110, 0, 44)
+			return v
+		end
+		local r = row(sec, 100)
+		local v = txt(r, text, 33, C.White, F.Med)
+		v.Position = UDim2.new(0, 72, 0.5, 0)
+		v.Size = UDim2.new(1, -110, 0, 44)
+		return v
 	end
 
 	local function flash(btn, msg, orig)
@@ -670,57 +693,27 @@ do
 	-- tabs ------------------------------------------------------------
 	local function tabFail(name) return function(e) warn("Item ESP: tab '" .. name .. "' failed: " .. tostring(e)) end end
 
-	xpcall(function() -- Home
-		local p = newPage("Home")
-		local a = section(p.left, "Overview", 1, "⌂")
-
-		local wr = row(a, 190)
-		local card = create("Frame", { Size = UDim2.new(1, -48, 0, 158), Position = UDim2.new(0, 24, 0, 16), BackgroundColor3 = C.Tile, BorderSizePixel = 0 }, wr)
-		corner(card, 22)
-		local av = create("ImageLabel", { Size = UDim2.fromOffset(112, 112), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 24, 0.5, 0), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Image = "" }, card)
-		create("UICorner", { CornerRadius = UDim.new(1, 0) }, av)
-		stroke(av, Color3.fromRGB(200, 202, 212), 2)
-		loadAvatar(av)
-		local wl = txt(card, "WELCOME " .. string.upper(player.Name), 30, C.White, F.Bold)
-		wl.Position = UDim2.new(0, 160, 0.5, -20)
-		wl.Size = UDim2.new(1, -180, 0, 40)
-		table.insert(usernameLabels, { label = wl, real = "WELCOME " .. string.upper(player.Name), hidden = "WELCOME ********" })
-		local hl = txt(card, "@" .. player.Name, 24, C.SubText, F.Reg)
-		hl.Position = UDim2.new(0, 160, 0.5, 24)
-		hl.Size = UDim2.new(1, -180, 0, 34)
-		table.insert(usernameLabels, { label = hl, real = "@" .. player.Name, hidden = "@********" })
-
-		local sr = row(a, 262)
-		UI.stats = {}
-		local function tile(name, xScale, xOff, y)
-			local t = create("Frame", { Size = UDim2.new(0.5, -30, 0, 116), Position = UDim2.new(xScale, xOff, 0, y), BackgroundColor3 = C.Tile, BorderSizePixel = 0 }, sr)
-			corner(t, 20)
-			local l1 = txt(t, name, 20, C.SubText, F.Reg)
-			l1.Position = UDim2.new(0, 22, 0, 34)
-			l1.Size = UDim2.new(1, -40, 0, 28)
-			local l2 = txt(t, "-", 32, C.White, F.Bold)
-			l2.Position = UDim2.new(0, 22, 0, 80)
-			l2.Size = UDim2.new(1, -40, 0, 44)
-			UI.stats[name] = l2
-		end
-		tile("Items Tracked", 0, 24, 8)
-		tile("Alert Items", 0.5, 6, 8)
-		tile("FPS", 0, 24, 136)
-		tile("Ping", 0.5, 6, 136)
-		for _, d in ipairs(a.dividers) do d.Visible = false end
+	xpcall(function() -- Status (main page, same cards as the reference)
+		local p = newPage("Status")
+		local a = section(p.left, "Script Check", 1, "▣")
+		UI.srvStatus = addInfo(a, "Fps - | Ping - | Executor", "Status Script")
+		UI.homeItems = addInfo(a, "Tracked 0 | Alerts 0 | Picked 0", "Item Scanner")
+		UI.srvPlayers = addInfo(a, "Players: -", "Server")
 		finish(a)
 
-		local b = section(p.right, "Session", 1, "⌂")
+		UI.stats = { ["Items Tracked"] = { Text = "0" }, ["Alert Items"] = { Text = "0" }, ["FPS"] = { Text = "-" }, ["Ping"] = { Text = "-" } }
+
+		local b = section(p.left, "Session", 2, "◈")
 		addCheckbox(b, "Hide Username", "HideUsername", function() UI.applyUsername() end)
 		finish(b)
 
-		local c = section(p.right, "Item Breakdown", 2, "◈")
+		local c = section(p.left, "Item Breakdown", 3, "◈")
 		UI.catInfo = {}
 		for _, cat in ipairs(CATEGORIES) do
 			UI.catInfo[cat.id] = addInfo(c, cat.label .. ": 0")
 		end
 		finish(c)
-	end, tabFail("Home"))
+	end, tabFail("Status"))
 
 	xpcall(function() -- Item ESP
 		local p = newPage("Item ESP")
@@ -794,16 +787,16 @@ do
 		UI.listRows = {}
 		UI.listEntries = {}
 		for i = 1, 40 do
-			local r = row(a, 66)
-			local nameL = txt(r, "", 21, C.White, F.Semi)
-			nameL.Position = UDim2.new(0, 31, 0, 33)
-			nameL.Size = UDim2.new(0, 290, 0, 30)
-			local distL = txt(r, "", 19, C.SubText, F.Reg)
-			distL.Position = UDim2.new(0, 326, 0, 33)
-			distL.Size = UDim2.new(0, 130, 0, 28)
-			local tp = create("TextButton", { Size = UDim2.fromOffset(78, 46), Position = UDim2.new(0, 466, 0, 10), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = "TP", TextSize = 18, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = true }, r)
+			local r = row(a, 100)
+			local nameL = txt(r, "", 30, C.White, F.Med)
+			nameL.Position = UDim2.new(0, 72, 0.5, 0)
+			nameL.Size = UDim2.new(0, 380, 0, 38)
+			local distL = txt(r, "", 28, C.Accent, F.Med)
+			distL.Position = UDim2.new(0, 470, 0.5, 0)
+			distL.Size = UDim2.new(0, 170, 0, 36)
+			local tp = create("TextButton", { Size = UDim2.fromOffset(78, 46), Position = UDim2.new(1, -240, 0.5, -27), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = "TP", TextSize = 18, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = true }, r)
 			corner(tp, 12)
-			local hide = create("TextButton", { Size = UDim2.fromOffset(78, 46), Position = UDim2.new(0, 552, 0, 10), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = "Hide", TextSize = 18, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = true }, r)
+			local hide = create("TextButton", { Size = UDim2.fromOffset(78, 46), Position = UDim2.new(1, -140, 0.5, -27), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = "Hide", TextSize = 18, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = true }, r)
 			corner(hide, 12)
 			tp.MouseButton1Click:Connect(function()
 				if UI.listEntries[i] then Actions.teleport(UI.listEntries[i]) end
@@ -1026,10 +1019,8 @@ do
 
 	xpcall(function() -- Server
 		local p = newPage("Server")
-		local a = section(p.left, "Script Status", 1, "■")
-		UI.srvStatus = addInfo(a, "Fps - | Ping - | Executor")
-		UI.srvPlayers = addInfo(a, "Players: -")
-		UI.srvAge = addInfo(a, "Server time: -")
+		local a = section(p.left, "Server Info", 1, "■")
+		UI.srvAge = addInfo(a, "Server time: -", "Server Time")
 		finish(a)
 		local b = section(p.left, "Server Tools", 2, "■")
 		addButton(b, "Copy Job ID", function(btn)
@@ -1071,13 +1062,24 @@ do
 			b.btn.BackgroundTransparency = sel and 0 or 1
 			b.marker.Visible = sel
 			b.text.TextColor3 = sel and C.White or C.SubText
-			b.icon.TextColor3 = sel and C.Accent or C.SubText
+			b.icon.TextColor3 = sel and C.White or C.SubText
 		end
 		for n, p in pairs(pillBtns) do
 			local sel = (n == name)
-			p.btn.Visible = (pageCat[n] == cat) and #catPages[cat] > 1
-			p.btn.BackgroundColor3 = sel and C.Selected or C.Panel
+			p.btn.Visible = (pageCat[n] == cat)
+			p.btn.BackgroundTransparency = sel and 0 or 1
 			p.btn.TextColor3 = sel and C.White or C.SubText
+		end
+	end
+	UI.openPage = selectPage
+	UI.search = function(q)
+		q = string.lower(q or "")
+		if q == "" then return end
+		for n in pairs(pages) do
+			if string.find(string.lower(n), q, 1, true) then
+				selectPage(n)
+				return
+			end
 		end
 	end
 
@@ -1086,13 +1088,13 @@ do
 		catOrder = catOrder + 1
 		catPages[title] = {}
 		local btn = create("TextButton", { Size = UDim2.new(1, 0, 0, 96), BackgroundColor3 = C.Selected, BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", AutoButtonColor = false, LayoutOrder = catOrder }, sideScroll)
-		corner(btn, 22)
-		local marker = create("Frame", { Size = UDim2.new(0, 5, 0, 54), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0, Visible = false }, btn)
+		corner(btn, 24)
+		local marker = create("Frame", { Size = UDim2.new(0, 6, 0, 52), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 2, 0.5, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0, Visible = false }, btn)
 		corner(marker, 3)
-		local ic = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(44, 44), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 30, 0.5, 0), Text = subs[1][2], TextSize = 32, Font = F.Med, TextColor3 = C.SubText }, btn)
-		local st = txt(btn, title, 28, C.SubText, F.Med)
-		st.Position = UDim2.new(0, 92, 0.5, 0)
-		st.Size = UDim2.new(1, -110, 0, 38)
+		local ic = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(46, 46), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 34, 0.5, 0), Text = subs[1][2], TextSize = 36, Font = F.Med, TextColor3 = C.SubText }, btn)
+		local st = txt(btn, title, 36, C.SubText, F.Med)
+		st.Position = UDim2.new(0, 104, 0.5, 0)
+		st.Size = UDim2.new(1, -120, 0, 46)
 		catBtns[title] = { btn = btn, marker = marker, text = st, icon = ic }
 		btn.MouseButton1Click:Connect(function() selectPage(lastPage[title] or subs[1][1]) end)
 		for i, entry in ipairs(subs) do
@@ -1100,23 +1102,23 @@ do
 			pageCat[name] = title
 			table.insert(catPages[title], name)
 			local pb = create("TextButton", {
-				Size = UDim2.new(0, 0, 0, 76), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = C.Panel, BorderSizePixel = 0,
-				Text = ico .. "  " .. name, TextSize = 27, Font = F.Med, TextColor3 = C.SubText, AutoButtonColor = false, Visible = false, LayoutOrder = catOrder * 10 + i,
+				Size = UDim2.new(0, 0, 0, 90), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = C.Selected, BackgroundTransparency = 1, BorderSizePixel = 0,
+				Text = ico .. "  " .. name, TextSize = 34, Font = F.Med, TextColor3 = C.SubText, AutoButtonColor = false, Visible = false, LayoutOrder = catOrder * 10 + i,
 			}, tabBar)
-			corner(pb, 20)
-			create("UIPadding", { PaddingLeft = UDim.new(0, 30), PaddingRight = UDim.new(0, 30) }, pb)
+			corner(pb, 24)
+			create("UIPadding", { PaddingLeft = UDim.new(0, 32), PaddingRight = UDim.new(0, 32) }, pb)
 			pillBtns[name] = { btn = pb }
 			pb.MouseButton1Click:Connect(function() selectPage(name) end)
 		end
 	end
 
-	addCategory("Main", { { "Home", "⌂" }, { "Server", "■" } })
+	addCategory("Main", { { "Status", "⌂" }, { "Server", "■" } })
 	addCategory("Visuals", { { "Item ESP", "◎" }, { "Player ESP", "◉" } })
 	addCategory("Alerts", { { "Alerts", "▲" } })
 	addCategory("Items", { { "Item List", "◈" }, { "Pickup", "◆" } })
 	addCategory("Player", { { "Movement", "▶" }, { "Utility", "■" } })
 	addCategory("Settings", { { "Colors", "◐" }, { "Settings", "◍" } })
-	selectPage("Home")
+	selectPage("Status")
 	UI.applyUsername()
 
 	-- small round logo while minimized (tap = restore, drag = move) --
@@ -1125,12 +1127,16 @@ do
 		Position = UDim2.new(1, -110, 0, 30), BackgroundColor3 = C.Window, BorderSizePixel = 0, AutoButtonColor = false,
 	}, screenGui)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, logoBtn)
-	stroke(logoBtn, Color3.fromRGB(235, 236, 242), 3)
+	stroke(logoBtn, Color3.fromRGB(58, 140, 255), 4)
 	local ring = create("Frame", { Size = UDim2.fromOffset(58, 26), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), Rotation = -28, BackgroundTransparency = 1 }, logoBtn)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, ring)
 	stroke(ring, C.White, 4)
 	local dot = create("Frame", { Size = UDim2.fromOffset(20, 20), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundColor3 = C.White, BorderSizePixel = 0 }, logoBtn)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, dot)
+	ring.Visible, dot.Visible = false, false
+	local miniAv = create("ImageLabel", { Size = UDim2.new(1, -8, 1, -8), Position = UDim2.fromOffset(4, 4), BackgroundTransparency = 1, Image = "" }, logoBtn)
+	create("UICorner", { CornerRadius = UDim.new(1, 0) }, miniAv)
+	loadAvatar(miniAv)
 
 	local function showMain(v)
 		main.Visible = v
@@ -2676,9 +2682,10 @@ task.spawn(function()
 			local fps = UI.stats and UI.stats["FPS"] and UI.stats["FPS"].Text or "-"
 			local png = UI.stats and UI.stats["Ping"] and UI.stats["Ping"].Text or "-"
 			UI.srvStatus.Text = "Fps " .. fps .. " | Ping " .. png .. " | " .. exec
-			UI.srvPlayers.Text = "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
+			UI.srvPlayers.Text = "Players " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
+			if UI.homeItems then UI.homeItems.Text = "Tracked " .. UI.stats["Items Tracked"].Text .. " | Alerts " .. UI.stats["Alert Items"].Text .. " | Picked " .. pickedCount end
 			local t = math.floor(Workspace.DistributedGameTime)
-			UI.srvAge.Text = string.format("Server time: %dh %02dm %02ds", t // 3600, (t % 3600) // 60, t % 60)
+			if UI.srvAge then UI.srvAge.Text = string.format("Server time: %dh %02dm %02ds", t // 3600, (t % 3600) // 60, t % 60) end
 		end
 		task.wait(1)
 	end
