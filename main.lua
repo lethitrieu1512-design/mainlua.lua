@@ -51,7 +51,7 @@ local Config = {
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
 	DragSpeed = 65, LogoSize = 64, ClickSound = true, RippleOn = true, AIProvider = "Claude (Anthropic)", AIKey = "", AIModel = "claude-sonnet-5-5", AIPrompt = "", AIContinue = true, AIRemember = false,
-	BgOn = true, BgOpacity = 35, Whitelist = "", WhitelistFriends = true, Crosshair = false, CrossSize = 12, CrossGap = 4, ColorCross = Color3.fromRGB(0, 226, 212), TimeOn = false, TimeVal = 14, Profile = "1",
+	Whitelist = "", WhitelistFriends = true, Crosshair = false, CrossSize = 12, CrossGap = 4, ColorCross = Color3.fromRGB(0, 226, 212), TimeOn = false, TimeVal = 14, Profile = "1",
 	BypassEnabled = false, BypassSpot = "Sky Platform", BypassMax = 12, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
 	-- notifications (Roblox's own notification popup)
@@ -233,7 +233,6 @@ local screenGui
 
 do
 	local DESIGN_W, DESIGN_H = 1515, 860
-	local BG_ID, LOGO_ID = "rbxassetid://93960368510055", "rbxassetid://93960368510055" -- window background + logo image
 	local SIDE_W, HEAD_H, PROFILE_H = 415, 147, 120
 
 	local F = {
@@ -288,17 +287,6 @@ do
 	corner(main, 30)
 	local mainStroke = stroke(main, Color3.fromRGB(32, 72, 72), 2)
 	UI.main = main
-
-	-- background image of the main window (behind everything, rounded like the window)
-	local bgImg = create("ImageLabel", {
-		Name = "Background", Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, Image = BG_ID,
-		ScaleType = Enum.ScaleType.Crop, ZIndex = 0, ImageTransparency = 1 - Config.BgOpacity / 100, Visible = Config.BgOn,
-	}, main)
-	create("UICorner", { CornerRadius = UDim.new(0, 30) }, bgImg)
-	function UI.applyBg()
-		bgImg.Visible = Config.BgOn
-		bgImg.ImageTransparency = 1 - math.clamp(Config.BgOpacity, 0, 100) / 100
-	end
 
 	-- outline ripple: rings keep expanding out of the window border (same effect as the small logo)
 	local function outlineRing(strong)
@@ -433,8 +421,7 @@ do
 	}, main)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, badge)
 	stroke(badge, Color3.fromRGB(58, 140, 255), 4)
-	badge.Image = LOGO_ID
-	badge.ScaleType = Enum.ScaleType.Crop
+	loadAvatar(badge)
 
 	-- header buttons (drawn with frames so no font glyph is needed)
 	local function hbtn(offsetFromRight)
@@ -1099,8 +1086,6 @@ do
 		addCheckbox(w, "Click Sound", "ClickSound")
 		addCheckbox(w, "Ripple Effect", "RippleOn")
 		addCheckbox(w, "Window Outline Ripple", "OutlineRipple")
-		addCheckbox(w, "Window Background Image", "BgOn", function() UI.applyBg() end)
-		addSlider(w, "Background Opacity", "BgOpacity", 5, 100, "%", function() UI.applyBg() end)
 		addDropdown(w, "Click Sound Type", "ClickSoundType", { "Click", "Snap", "Switch" }, function() UI.click() end)
 		addSlider(w, "Click Volume", "ClickVolume", 1, 10, "")
 		finish(w)
@@ -1596,8 +1581,7 @@ do
 	local logoStroke = stroke(logoBtn, Color3.fromRGB(58, 140, 255), 4)
 	local miniAv = create("ImageLabel", { Size = UDim2.new(1, -8, 1, -8), Position = UDim2.fromOffset(4, 4), BackgroundTransparency = 1, Image = "" }, logoBtn)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, miniAv)
-	miniAv.Image = LOGO_ID
-	miniAv.ScaleType = Enum.ScaleType.Crop
+	loadAvatar(miniAv)
 	local logoScale = create("UIScale", { Scale = 1 }, logoBtn)
 
 	-- ripple effect: rings expand out of the logo (continuously while minimized, bigger on tap)
