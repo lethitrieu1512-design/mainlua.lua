@@ -1,4 +1,4 @@
--- CodeBot V1.8 | Roblox Luau (Delta compatible)
+-- CodeBot V1.9 | Roblox Luau (Delta compatible)
 -- JJS Item ESP  |  Atom-style GUI  |  HvH tab (orbit / spin)  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
 -- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
@@ -50,7 +50,8 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 65, LogoSize = 64, ClickSound = true, RippleOn = true, Whitelist = "", WhitelistFriends = true, Crosshair = false, CrossSize = 12, CrossGap = 4, ColorCross = Color3.fromRGB(0, 226, 212), TimeOn = false, TimeVal = 14, Profile = "1",
+	DragSpeed = 65, LogoSize = 64, ClickSound = true, RippleOn = true, AIProvider = "Claude (Anthropic)", AIKey = "", AIModel = "claude-sonnet-5-5", AIPrompt = "", AIContinue = true, AIRemember = false,
+	BgOn = true, BgOpacity = 35, Whitelist = "", WhitelistFriends = true, Crosshair = false, CrossSize = 12, CrossGap = 4, ColorCross = Color3.fromRGB(0, 226, 212), TimeOn = false, TimeVal = 14, Profile = "1",
 	BypassEnabled = false, BypassSpot = "Sky Platform", BypassMax = 12, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
 	-- notifications (Roblox's own notification popup)
@@ -114,7 +115,7 @@ local function saveConfig(file)
 		if t == "Color3" then
 			data[k] = { math.floor(v.R * 255 + 0.5), math.floor(v.G * 255 + 0.5), math.floor(v.B * 255 + 0.5) }
 		elseif t == "boolean" or t == "number" or t == "string" then
-			data[k] = v
+			if k ~= "AIKey" then data[k] = v end -- the API key never goes into the config file
 		end
 	end
 	local ok = pcall(function() writefile(file or FILE, HttpService:JSONEncode(data)) end)
@@ -232,8 +233,8 @@ local screenGui
 
 do
 	local DESIGN_W, DESIGN_H = 1515, 860
+	local BG_ID, LOGO_ID = "rbxassetid://93960368510055", "rbxassetid://93960368510055" -- window background + logo image
 	local SIDE_W, HEAD_H, PROFILE_H = 415, 147, 120
-	local ASSET_ID = "rbxassetid://101171083489407" -- background + logo image
 
 	local F = {
 		Reg = Enum.Font.Gotham, Med = Enum.Font.GothamMedium, Semi = Enum.Font.GothamSemibold,
@@ -288,13 +289,16 @@ do
 	local mainStroke = stroke(main, Color3.fromRGB(32, 72, 72), 2)
 	UI.main = main
 
-	-- background image (lower ImageTransparency = stronger image, higher = fainter)
-	local bg = create("ImageLabel", {
-		Name = "Background", Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1,
-		Image = ASSET_ID, ImageTransparency = 0.55, ScaleType = Enum.ScaleType.Crop,
-		ZIndex = 0, Active = false,
+	-- background image of the main window (behind everything, rounded like the window)
+	local bgImg = create("ImageLabel", {
+		Name = "Background", Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, Image = BG_ID,
+		ScaleType = Enum.ScaleType.Crop, ZIndex = 0, ImageTransparency = 1 - Config.BgOpacity / 100, Visible = Config.BgOn,
 	}, main)
-	create("UICorner", { CornerRadius = UDim.new(0, 30) }, bg)
+	create("UICorner", { CornerRadius = UDim.new(0, 30) }, bgImg)
+	function UI.applyBg()
+		bgImg.Visible = Config.BgOn
+		bgImg.ImageTransparency = 1 - math.clamp(Config.BgOpacity, 0, 100) / 100
+	end
 
 	-- outline ripple: rings keep expanding out of the window border (same effect as the small logo)
 	local function outlineRing(strong)
@@ -422,14 +426,15 @@ do
 		end
 	end
 
-	-- round logo badge, top-center, sticking out of the window like the reference
+	-- round avatar badge, top-center, sticking out of the window like the reference
 	local badge = create("ImageLabel", {
 		Size = UDim2.fromOffset(96, 96), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, -12),
 		BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Image = "", ZIndex = 5,
 	}, main)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, badge)
 	stroke(badge, Color3.fromRGB(58, 140, 255), 4)
-	badge.Image = ASSET_ID
+	badge.Image = LOGO_ID
+	badge.ScaleType = Enum.ScaleType.Crop
 
 	-- header buttons (drawn with frames so no font glyph is needed)
 	local function hbtn(offsetFromRight)
@@ -1094,6 +1099,8 @@ do
 		addCheckbox(w, "Click Sound", "ClickSound")
 		addCheckbox(w, "Ripple Effect", "RippleOn")
 		addCheckbox(w, "Window Outline Ripple", "OutlineRipple")
+		addCheckbox(w, "Window Background Image", "BgOn", function() UI.applyBg() end)
+		addSlider(w, "Background Opacity", "BgOpacity", 5, 100, "%", function() UI.applyBg() end)
 		addDropdown(w, "Click Sound Type", "ClickSoundType", { "Click", "Snap", "Switch" }, function() UI.click() end)
 		addSlider(w, "Click Volume", "ClickVolume", 1, 10, "")
 		finish(w)
@@ -1453,6 +1460,45 @@ do
 		finish(c)
 	end, tabFail("Tools"))
 
+	xpcall(function() -- AI Assistant
+		local p = newPage("Assistant")
+		local a = section(p.left, "AI Script Assistant", 1, "✦")
+		addDropdown(a, "Provider", "AIProvider", { "Claude (Anthropic)", "OpenAI" }, function(v)
+			if string.find(v, "OpenAI", 1, true) and string.find(Config.AIModel, "claude", 1, true) then Config.AIModel = "gpt-4o-mini" end
+			if string.find(v, "Claude", 1, true) and string.find(Config.AIModel, "gpt", 1, true) then Config.AIModel = "claude-sonnet-5-5" end
+			UI.sync()
+		end)
+		addInput(a, "API Key (yours, only sent to the provider)", "AIKey", "paste your API key...", function() Feat.aiSaveKey() end)
+		addCheckbox(a, "Remember Key On This Device", "AIRemember", function() Feat.aiSaveKey() end)
+		addInput(a, "Model", "AIModel", "model name")
+		finish(a)
+
+		local b = section(p.left, "Create A Script", 2, "✦")
+		addInput(b, "What should the script do?", "AIPrompt", "e.g. auto collect coins with a toggle GUI")
+		addCheckbox(b, "Continue Previous Script (edit it)", "AIContinue")
+		addButton(b, "Generate main.lua", function(btn)
+			flash(btn, "Working...", "Generate main.lua")
+			Feat.aiGenerate()
+		end)
+		UI.aiStatus = addInfo(b, "Idle", "AI Status")
+		UI.aiPreview = addInfo(b, "No script yet", "Script")
+		finish(b)
+
+		local c = section(p.left, "main.lua", 3, "✦")
+		addButton(c, "Run main.lua", function(btn)
+			flash(btn, "Starting...", "Run main.lua")
+			Feat.aiRun()
+		end)
+		addButton(c, "Load main.lua From Workspace", function(btn)
+			flash(btn, Feat.aiLoad() and "Loaded!" or "Not found", "Load main.lua From Workspace")
+		end)
+		addButton(c, "Copy Code", function(btn)
+			local ok = Feat.ai.code and pcall(function() setclipboard(Feat.ai.code) end)
+			flash(btn, ok and "Copied!" or "Nothing to copy", "Copy Code")
+		end)
+		finish(c)
+	end, tabFail("Assistant"))
+
 	-- sidebar entries (categories) + pill tabs (pages), like the reference ---
 	local catBtns, pillBtns, catPages, pageCat, lastPage = {}, {}, {}, {}, {}
 	local function selectPage(name)
@@ -1536,6 +1582,7 @@ do
 	addCategory("Items", { { "Item List", "◈" }, { "Pickup", "◆" } })
 	addCategory("Player", { { "Movement", "▶" }, { "Players", "◉" }, { "Utility", "■" }, { "Tools", "◆" } })
 	addCategory("HvH", { { "HvH", "◆" }, { "Combat", "▶" } })
+	addCategory("AI", { { "Assistant", "✦" } })
 	addCategory("Settings", { { "Colors", "◐" }, { "Settings", "◍" } })
 	selectPage("Status")
 	UI.applyUsername()
@@ -1549,7 +1596,8 @@ do
 	local logoStroke = stroke(logoBtn, Color3.fromRGB(58, 140, 255), 4)
 	local miniAv = create("ImageLabel", { Size = UDim2.new(1, -8, 1, -8), Position = UDim2.fromOffset(4, 4), BackgroundTransparency = 1, Image = "" }, logoBtn)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, miniAv)
-	miniAv.Image = ASSET_ID
+	miniAv.Image = LOGO_ID
+	miniAv.ScaleType = Enum.ScaleType.Crop
 	local logoScale = create("UIScale", { Scale = 1 }, logoBtn)
 
 	-- ripple effect: rings expand out of the logo (continuously while minimized, bigger on tap)
@@ -4103,6 +4151,143 @@ task.spawn(function()
 		task.wait(0.1)
 	end
 end)
+
+-- AI ASSISTANT: asks an AI model (YOUR api key) to write a Roblox Luau script and saves it as main.lua
+Feat.ai = { code = nil, busy = false }
+Feat.aiSystem = "You are CodeBot, an expert Roblox Luau scripter. Write ONE complete, working, self-contained Luau script for a Roblox executor (Delta, LocalScript context): use game:GetService, Players.LocalPlayer, RunService, UserInputService, etc. Wrap risky calls in pcall and add short comments. Reply with ONLY the code inside a single ```lua code block, no explanations."
+
+Feat.aiStatus = function(t)
+	if UI.aiStatus then UI.aiStatus.Text = t end
+end
+
+Feat.aiShow = function()
+	local code = Feat.ai.code
+	if UI.aiPreview then
+		if code then
+			local _, n = string.gsub(code, "\n", "\n")
+			UI.aiPreview.Text = string.format("%d lines | %d chars | saved as main.lua", n + 1, #code)
+		else
+			UI.aiPreview.Text = "No script yet"
+		end
+	end
+end
+
+Feat.aiSaveKey = function()
+	pcall(function()
+		if Config.AIRemember and writefile then
+			writefile("CodeBot_AIKey.txt", Config.AIKey)
+		elseif delfile and isfile and isfile("CodeBot_AIKey.txt") then
+			delfile("CodeBot_AIKey.txt")
+		end
+	end)
+end
+pcall(function()
+	if isfile and isfile("CodeBot_AIKey.txt") then
+		Config.AIKey = readfile("CodeBot_AIKey.txt")
+		Config.AIRemember = true
+	end
+end)
+
+local function aiExtract(text)
+	return string.match(text, "```[Ll]ua%s*\n(.-)```") or string.match(text, "```%s*\n(.-)```") or text
+end
+
+Feat.aiGenerate = function()
+	if Feat.ai.busy then
+		Feat.aiStatus("Already working...")
+		return
+	end
+	local prompt = Config.AIPrompt
+	if not prompt or prompt == "" then
+		Feat.aiStatus("Type what the script should do first")
+		return
+	end
+	if not Config.AIKey or Config.AIKey == "" then
+		Feat.aiStatus("Paste your API key first")
+		return
+	end
+	local req = request or http_request or (syn and syn.request) or (http and http.request)
+	if not req then
+		Feat.aiStatus("Your executor has no HTTP request function")
+		return
+	end
+	Feat.ai.busy = true
+	Feat.aiStatus("Asking the AI...")
+	task.spawn(function()
+		local userText = prompt
+		if Config.AIContinue and Feat.ai.code then
+			userText = "Here is the current script:\n```lua\n" .. Feat.ai.code .. "\n```\nChange it like this and return the full updated script: " .. prompt
+		end
+		local claude = string.find(Config.AIProvider, "Claude", 1, true) ~= nil
+		local url, headers, body
+		if claude then
+			url = "https://api.anthropic.com/v1/messages"
+			headers = { ["Content-Type"] = "application/json", ["x-api-key"] = Config.AIKey, ["anthropic-version"] = "2023-06-01" }
+			body = HttpService:JSONEncode({ model = Config.AIModel, max_tokens = 8000, system = Feat.aiSystem, messages = { { role = "user", content = userText } } })
+		else
+			url = "https://api.openai.com/v1/chat/completions"
+			headers = { ["Content-Type"] = "application/json", ["Authorization"] = "Bearer " .. Config.AIKey }
+			body = HttpService:JSONEncode({ model = Config.AIModel, messages = { { role = "system", content = Feat.aiSystem }, { role = "user", content = userText } } })
+		end
+		local ok, res = pcall(req, { Url = url, Method = "POST", Headers = headers, Body = body })
+		local text, errMsg
+		if not ok or not res then
+			errMsg = "Request failed: " .. tostring(res)
+		else
+			local ok2, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+			if not ok2 or type(data) ~= "table" then
+				errMsg = "Bad reply (HTTP " .. tostring(res.StatusCode) .. ")"
+			elseif data.error then
+				errMsg = tostring(type(data.error) == "table" and data.error.message or data.error)
+			elseif claude then
+				text = data.content and data.content[1] and data.content[1].text
+			else
+				text = data.choices and data.choices[1] and data.choices[1].message and data.choices[1].message.content
+			end
+		end
+		Feat.ai.busy = false
+		if not text then
+			Feat.aiStatus("Error: " .. tostring(errMsg or "empty reply"))
+			notify("AI Assistant", "Could not generate: " .. tostring(errMsg or "empty reply"), true)
+			return
+		end
+		Feat.ai.code = aiExtract(text)
+		pcall(function() writefile("main.lua", Feat.ai.code) end)
+		Feat.aiShow()
+		Feat.aiStatus("Done - saved as main.lua")
+		notify("AI Assistant", "main.lua is ready (Run main.lua to start it)", true)
+	end)
+end
+
+Feat.aiLoad = function()
+	local ok, code = pcall(function() return readfile("main.lua") end)
+	if ok and code then
+		Feat.ai.code = code
+		Feat.aiShow()
+		Feat.aiStatus("Loaded main.lua from workspace")
+		return true
+	end
+	Feat.aiStatus("No main.lua in your workspace yet")
+	return false
+end
+
+Feat.aiRun = function()
+	local code = Feat.ai.code
+	if not code then
+		Feat.aiStatus("Generate or load a script first")
+		return
+	end
+	local fn, err = loadstring(code)
+	if not fn then
+		Feat.aiStatus("Syntax error: " .. tostring(err))
+		notify("AI Assistant", "The script has a syntax error", true)
+		return
+	end
+	task.spawn(function()
+		local ok, e = pcall(fn)
+		Feat.aiStatus(ok and "main.lua is running" or ("Runtime error: " .. tostring(e)))
+	end)
+end
 
 -- undo everything when the script is unloaded
 Feat.cleanup = function()
