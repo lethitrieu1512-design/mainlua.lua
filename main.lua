@@ -82,7 +82,7 @@ local Config = {
 	CFrameSpeed = false, CFrameSpeedVal = 40, Bhop = false, LowGravity = false, GravityVal = 60,
 	FlyKey = "None", NoclipKey = "None", SpeedKey = "None",
 	WP1 = "", WP2 = "", WP3 = "",
-	OrbitWalk = true, OrbitEngage = 10, OrbitWalkSpeed = 60, TargetHUD = true, PGlow = true, InfZoom = false, HideKey = "None",
+	OrbitWalk = true, OrbitEngage = 10, OrbitWalkSpeed = 60, TargetHUD = true, HUDSize = 33, OutlineRipple = true, PGlow = true, InfZoom = false, HideKey = "None",
 
 	-- utility
 	AntiAFK = true, Fullbright = false, FOVOn = false, FOVVal = 90,
@@ -284,6 +284,27 @@ do
 	corner(main, 30)
 	local mainStroke = stroke(main, Color3.fromRGB(32, 72, 72), 2)
 	UI.main = main
+
+	-- outline ripple: rings keep expanding out of the window border (same effect as the small logo)
+	local function outlineRing(strong)
+		local grow = strong and 220 or 140
+		local ring = create("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 0 }, main)
+		local rc = create("UICorner", { CornerRadius = UDim.new(0, 30) }, ring)
+		local st = stroke(ring, Color3.fromRGB(58, 140, 255), 4)
+		st.Transparency = strong and 0 or 0.35
+		local info = TweenInfo.new(strong and 0.9 or 1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		TweenService:Create(ring, info, { Size = UDim2.new(1, grow, 1, grow) }):Play()
+		TweenService:Create(rc, info, { CornerRadius = UDim.new(0, 30 + grow / 2) }):Play()
+		TweenService:Create(st, info, { Transparency = 1 }):Play()
+		task.delay(1.8, function() ring:Destroy() end)
+	end
+	UI.outlineRing = outlineRing
+	task.spawn(function()
+		while running do
+			if main.Visible and Config.OutlineRipple then pcall(outlineRing, false) end
+			task.wait(1.2)
+		end
+	end)
 
 	-- click sound (one reusable Sound, volume / type from Settings)
 	local CLICK_IDS = { Click = "rbxasset://sounds/button.wav", Snap = "rbxasset://sounds/snap.mp3", Switch = "rbxasset://sounds/switch.mp3" }
@@ -1036,6 +1057,7 @@ do
 		local d = section(p.left, "Notifications", 2, "◍")
 		addDropdown(d, "Notification Style", "NotifyStyle", { "Hub", "Roblox" })
 		addCheckbox(d, "Status Notifications", "StatusNotify")
+		addCheckbox(d, "Player Join / Leave Alerts", "JoinAlerts")
 		addSlider(d, "Notification Time", "NotifyDuration", 2, 15, "s")
 		addButton(d, "Test Roblox Notification", function() notify("Item ESP", "Roblox notifications are working") end)
 		finish(d)
@@ -1045,6 +1067,7 @@ do
 		addSlider(w, "Minimized Logo Size", "LogoSize", 36, 160, " px", function() if UI.applyLogo then UI.applyLogo() end end)
 		addCheckbox(w, "Click Sound", "ClickSound")
 		addCheckbox(w, "Ripple Effect", "RippleOn")
+		addCheckbox(w, "Window Outline Ripple", "OutlineRipple")
 		addDropdown(w, "Click Sound Type", "ClickSoundType", { "Click", "Snap", "Switch" }, function() UI.click() end)
 		addSlider(w, "Click Volume", "ClickVolume", 1, 10, "")
 		finish(w)
@@ -1110,6 +1133,7 @@ do
 		addSlider(t, "Engage Distance (orbit starts at)", "OrbitEngage", 4, 40, " st")
 		addSlider(t, "Walk Speed To Target", "OrbitWalkSpeed", 16, 200, "")
 		addCheckbox(t, "Target HUD (name + health bar)", "TargetHUD")
+		addSlider(t, "Target HUD Size", "HUDSize", 15, 100, "%")
 		addSlider(t, "Max Target Distance", "OrbitMaxDist", 50, 5000, " st")
 		addButton(t, "Teleport Behind Target", function(btn)
 			flash(btn, Feat.tpBehind() and "Teleported!" or "No target", "Teleport Behind Target")
@@ -1710,6 +1734,7 @@ do
 	}, screenGui)
 	corner(hud, 16)
 	stroke(hud, Color3.fromRGB(32, 72, 72), 2)
+	local hudScale = create("UIScale", { Scale = Config.HUDSize / 100 }, hud)
 	local hudName = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 28), Position = UDim2.fromOffset(12, 6), Text = "", TextSize = 19, Font = F.Bold, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd }, hud)
 	local hudHp = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 28), Position = UDim2.fromOffset(12, 6), Text = "", TextSize = 17, Font = F.Med, TextColor3 = C.SubText, TextXAlignment = Enum.TextXAlignment.Right }, hud)
 	local hudBg = create("Frame", { Size = UDim2.new(1, -24, 0, 14), Position = UDim2.fromOffset(12, 44), BackgroundColor3 = C.ToggleOff, BorderSizePixel = 0 }, hud)
@@ -1723,6 +1748,7 @@ do
 			return
 		end
 		hud.Visible = true
+		hudScale.Scale = math.clamp(Config.HUDSize, 10, 150) / 100
 		hudName.Text = tostring(name) .. "  |  kills " .. tostring(kills or 0)
 		hudHp.Text = "HP " .. math.floor(hp) .. "/" .. math.floor(mhp)
 		local rel = math.clamp(hp / math.max(mhp, 1), 0, 1)
