@@ -233,7 +233,7 @@ local screenGui
 do
 	local DESIGN_W, DESIGN_H = 1515, 860
 	local SIDE_W, HEAD_H, PROFILE_H = 415, 147, 120
-	local ASSET_ID = "rbxassetid://93960368510055" -- background + logo image
+	local ASSET_ID = "rbxthumb://type=Asset&id=93960368510055&w=420&h=420" -- background + logo image (works with Decal IDs)
 
 	local F = {
 		Reg = Enum.Font.Gotham, Med = Enum.Font.GothamMedium, Semi = Enum.Font.GothamSemibold,
@@ -4165,3 +4165,4 @@ if UI.closeBtn then UI.closeBtn.MouseButton1Click:Connect(cleanup) end
 
 print("CodeBot V1.1: Item ESP loaded (alerts for: " .. Config.AlertNames .. ")")
 notify("Item ESP loaded", "Alerts for: " .. Config.AlertNames, true)
+
