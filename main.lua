@@ -1,4 +1,4 @@
--- CodeBot V1.1 | Roblox Luau (Delta compatible)
+l-- CodeBot V1.2 | Roblox Luau (Delta compatible)
 -- JJS Item ESP  |  Atom-style GUI  |  HvH tab (orbit / spin)  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
 -- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
@@ -50,7 +50,7 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 60, LogoSize = 64, -- drag speed in % (60 = 0.6), minimized logo size in px
+	DragSpeed = 65, LogoSize = 64, -- drag speed in % (60 = 0.6), minimized logo size in px
 
 	-- notifications (Roblox's own notification popup)
 	StatusNotify = true, NotifyDuration = 6, NotifyStyle = "Hub",
@@ -75,6 +75,7 @@ local Config = {
 	OrbitMode = "Circle", OrbitTargetMode = "Closest", OrbitLock = true, OrbitFace = true, OrbitTeamCheck = true,
 	OrbitMaxDist = 1000, OrbitKey = "None", OrbitAttack = false, OrbitAttackCPS = 12,
 	SpinOn = false, SpinSpeed = 1500,
+	TargetHL = true, NotifyKill = true, HitboxOn = false, HitboxSize = 10, VoidSafe = true, VoidY = -150,
 
 	-- utility
 	AntiAFK = true, Fullbright = false, FOVOn = false, FOVVal = 90,
@@ -136,6 +137,7 @@ loadConfig() -- settings from last time
 -- risky toggles never start switched on
 Config.Fly, Config.Noclip, Config.AutoCollect, Config.WalkCollect, Config.OrbitOn = false, false, false, false, false
 Config.SpectateOn, Config.ClickTP, Config.AutoClick, Config.SpinOn, Config.OrbitAttack = false, false, false, false, false
+Config.HitboxOn = false
 
 local connections = {}
 local running = true
@@ -944,7 +946,7 @@ do
 		finish(d)
 
 		local w = section(p.left, "Window", 3, "◍")
-		addSlider(w, "Drag Speed (60% = 0.6)", "DragSpeed", 20, 150, "%")
+		addSlider(w, "Drag Speed (65% = 0.65)", "DragSpeed", 20, 150, "%")
 		addSlider(w, "Minimized Logo Size", "LogoSize", 36, 160, " px", function() if UI.applyLogo then UI.applyLogo() end end)
 		finish(w)
 	end, tabFail("Settings"))
@@ -1017,7 +1019,19 @@ do
 			notify("Spin", v and "ON - spinning in place" or "OFF", true)
 		end)
 		addSlider(c, "Spin Speed (deg/s)", "SpinSpeed", 100, 20000, "")
+		addCheckbox(c, "Highlight Target", "TargetHL")
+		addCheckbox(c, "Notify When Target Dies", "NotifyKill")
 		finish(c)
+
+		local h = section(p.left, "Hitbox & Safety", 4, "◆")
+		addCheckbox(h, "Hitbox Expander (other players)", "HitboxOn", function(v)
+			notify("Hitbox", v and "ON - enemy hitboxes enlarged" or "OFF", true)
+			if not v then Feat.hitboxRestore() end
+		end)
+		addSlider(h, "Hitbox Size", "HitboxSize", 3, 40, " st")
+		addCheckbox(h, "Void Safe (auto return)", "VoidSafe")
+		addSlider(h, "Void Height (Y)", "VoidY", -1000, 0, "")
+		finish(h)
 	end, tabFail("HvH"))
 
 	xpcall(function() -- Utility
@@ -1025,7 +1039,7 @@ do
 		local a = section(p.left, "Visual Utility", 1, "■")
 		addCheckbox(a, "Fullbright", "Fullbright")
 		addCheckbox(a, "Custom FOV", "FOVOn")
-		addSlider(a, "FOV", "FOVVal", 40, 120, "")
+		addSlider(a, "FOV", "FOVVal", 30, 200, "")
 		finish(a)
 		local b = section(p.right, "Server & Character", 1, "■")
 		addCheckbox(b, "Anti AFK", "AntiAFK")
@@ -2156,12 +2170,26 @@ Feat.step = function(dt)
 		Feat.acc = 0
 		pcall(Feat.updatePlayers)
 		pcall(Feat.light)
+		pcall(Feat.hitbox)
 	end
 
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not (hum and hrp) then return end
+
+	-- void safe: remember the last safe spot, return there when falling out of the map
+	if Config.VoidSafe then
+		local now = os.clock()
+		if hrp.Position.Y > Config.VoidY + 40 and hum.FloorMaterial ~= Enum.Material.Air and now - (Feat.safeT or 0) > 1 then
+			Feat.safeT, Feat.safePos = now, hrp.CFrame
+		end
+		if hrp.Position.Y < Config.VoidY and Feat.safePos and not Config.OrbitOn then
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.CFrame = Feat.safePos + Vector3.new(0, 4, 0)
+			notify("Void Safe", "Returned to the last safe spot", true)
+		end
+	end
 
 	if Config.SpeedOn and not Feat.walking then
 		if not Feat.orig.speed then Feat.orig.speed = hum.WalkSpeed end
@@ -2506,6 +2534,44 @@ task.spawn(function()
 	end
 end)
 
+-- hitbox expander (client side): enlarges other players' root part
+Feat.hbOrig = {}
+Feat.hitboxRestore = function()
+	for plr, d in pairs(Feat.hbOrig) do
+		local r = d.part
+		if r and r.Parent then
+			pcall(function()
+				r.Size, r.Transparency, r.CanCollide = d.size, d.trans, d.coll
+			end)
+		end
+		Feat.hbOrig[plr] = nil
+	end
+end
+Feat.hitbox = function()
+	if not Config.HitboxOn then
+		if next(Feat.hbOrig) then Feat.hitboxRestore() end
+		return
+	end
+	local s = Config.HitboxSize
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			local c = plr.Character
+			local r = c and c:FindFirstChild("HumanoidRootPart")
+			if r then
+				local d = Feat.hbOrig[plr]
+				if d and d.part ~= r then d = nil end
+				if not d then
+					d = { part = r, size = r.Size, trans = r.Transparency, coll = r.CanCollide }
+					Feat.hbOrig[plr] = d
+				end
+				r.Size = Vector3.new(s, s, s)
+				r.Transparency = 0.8
+				r.CanCollide = false
+			end
+		end
+	end
+end
+
 ---------------------------------------------------------------------
 -- HvH: ORBIT (no shake) + SPIN
 -- The position is applied before physics, after physics and right before rendering, velocities are zeroed,
@@ -2544,6 +2610,7 @@ end
 Feat.orbitStop = function()
 	local o = Feat.orbit
 	o.target, o.hum, o.cf = nil, nil, nil
+	if o.hl then pcall(function() o.hl:Destroy() end) o.hl = nil end
 	Feat.orbitInfo("Orbit off")
 	if o.stand then
 		o.stand = false
@@ -2583,6 +2650,11 @@ Feat.orbitUpdate = function(dt)
 	end
 	local now = os.clock()
 
+	if o.hum and o.hum.Parent and o.hum.Health <= 0 and o.lastDead ~= o.hum then
+		o.lastDead = o.hum
+		if Config.NotifyKill then notify("Target down", (o.target and o.target.Parent and o.target.Parent.Name or "player") .. " died", true) end
+	end
+
 	-- target selection: lock keeps one player until they die / leave
 	local valid = o.target and o.target.Parent and o.hum and o.hum.Parent and o.hum.Health > 0
 	if not valid or (not Config.OrbitLock and now - o.lastPick > 0.2) then
@@ -2612,6 +2684,20 @@ Feat.orbitUpdate = function(dt)
 	if not o.stand then
 		o.stand = true
 		hum.PlatformStand = true
+	end
+	if Config.TargetHL and t.Parent then
+		if not o.hl then
+			o.hl = Instance.new("Highlight")
+			o.hl.FillTransparency = 0.6
+			o.hl.OutlineColor = Config.AlertColor
+			o.hl.FillColor = Config.AlertColor
+			o.hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			o.hl.Parent = espFolder
+		end
+		if o.hl.Adornee ~= t.Parent then o.hl.Adornee = t.Parent end
+	elseif o.hl then
+		o.hl:Destroy()
+		o.hl = nil
 	end
 	if now - o.lastClip > 0.25 then
 		o.lastClip = now
@@ -2836,6 +2922,8 @@ Feat.cleanup = function()
 	local cam = Workspace.CurrentCamera
 	if cam and Feat.orig.fov then pcall(function() cam.FieldOfView = Feat.orig.fov end) end
 	Feat.restorePrompts()
+	Config.HitboxOn = false
+	pcall(Feat.hitboxRestore)
 	for plr in pairs(Feat.pl) do Feat.dropPlayer(plr) end
 end
 
