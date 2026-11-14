@@ -52,7 +52,8 @@ local Config = {
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
 
 	-- notifications (Roblox's own notification popup)
-	StatusNotify = true, NotifyDuration = 6,
+	StatusNotify = true, NotifyDuration = 6, NotifyStyle = "Hub",
+	AutoClick = false, ClickCPS = 10, AutoRejoin = false, JoinJobId = "",
 
 	-- auto collect / prompt tweaks
 	WalkCollect = false, WalkNames = "", WalkItemSpeed = 60, WalkRange = 2000, WalkTimeout = 40,
@@ -128,7 +129,7 @@ end
 loadConfig() -- settings from last time
 -- risky toggles never start switched on
 Config.Fly, Config.Noclip, Config.AutoCollect, Config.WalkCollect, Config.OrbitOn = false, false, false, false, false
-Config.SpectateOn, Config.ClickTP = false, false
+Config.SpectateOn, Config.ClickTP, Config.AutoClick = false, false, false
 
 local connections = {}
 local running = true
@@ -188,17 +189,17 @@ local function getGuiParent()
 	return player:WaitForChild("PlayerGui")
 end
 
--- Roblox's own notification popup (bottom-right). `isStatus` = non-alert message, can be switched off in Settings.
+-- notification: "Hub" = card in the GUI style (bottom-right), "Roblox" = Roblox's own popup. `isStatus` = non-alert message.
 local function notify(title, text, isStatus)
 	if isStatus and not Config.StatusNotify then return end
+	if Config.NotifyStyle ~= "Roblox" and UI.toast then
+		pcall(UI.toast, title, text, isStatus and "info" or "alert")
+		return
+	end
 	task.spawn(function()
 		for _ = 1, 8 do -- the core script may not be ready yet right after execution
 			local ok = pcall(function()
-				StarterGui:SetCore("SendNotification", {
-					Title = tostring(title),
-					Text = tostring(text or ""),
-					Duration = Config.NotifyDuration,
-				})
+				StarterGui:SetCore("SendNotification", { Title = tostring(title), Text = tostring(text or ""), Duration = Config.NotifyDuration })
 			end)
 			if ok then return end
 			task.wait(0.5)
@@ -213,18 +214,18 @@ local screenGui
 
 do
 	local DESIGN_W, DESIGN_H = 1816, 950
-	local SIDE_W, HEAD_H, PROFILE_H = 405, 125, 120
+	local SIDE_W, HEAD_H, PROFILE_H = 370, 150, 110
 
 	local F = {
 		Reg = Enum.Font.Gotham, Med = Enum.Font.GothamMedium, Semi = Enum.Font.GothamSemibold,
 		Bold = Enum.Font.GothamBold, Black = Enum.Font.GothamBlack,
 	}
 	local C = {
-		Window = Color3.fromRGB(13, 14, 17), Side = Color3.fromRGB(16, 17, 20), Panel = Color3.fromRGB(21, 22, 26),
-		Tile = Color3.fromRGB(15, 16, 19), Input = Color3.fromRGB(11, 12, 15), Line = Color3.fromRGB(40, 42, 50),
-		Bar = Color3.fromRGB(70, 73, 90), BarLight = Color3.fromRGB(150, 153, 168), White = Color3.fromRGB(240, 240, 244),
-		SubText = Color3.fromRGB(135, 138, 152), ToggleOff = Color3.fromRGB(42, 44, 56), Knob = Color3.fromRGB(14, 14, 18),
-		Selected = Color3.fromRGB(35, 36, 43), IconBox = Color3.fromRGB(28, 29, 35), Check = Color3.fromRGB(122, 138, 255), Accent = Color3.fromRGB(122, 138, 255),
+		Window = Color3.fromRGB(15, 18, 20), Side = Color3.fromRGB(15, 18, 20), Panel = Color3.fromRGB(23, 28, 30),
+		Tile = Color3.fromRGB(17, 21, 23), Input = Color3.fromRGB(12, 15, 17), Line = Color3.fromRGB(36, 44, 46),
+		Bar = Color3.fromRGB(70, 82, 86), BarLight = Color3.fromRGB(150, 160, 164), White = Color3.fromRGB(240, 244, 244),
+		SubText = Color3.fromRGB(135, 146, 150), ToggleOff = Color3.fromRGB(40, 48, 50), Knob = Color3.fromRGB(10, 14, 16),
+		Selected = Color3.fromRGB(32, 40, 42), IconBox = Color3.fromRGB(30, 37, 39), Check = Color3.fromRGB(0, 226, 212), Accent = Color3.fromRGB(0, 226, 212),
 	}
 
 	local function create(className, props, parent)
@@ -268,8 +269,8 @@ do
 	local mainStroke = stroke(main, Color3.fromRGB(255, 255, 255), 2)
 	local strokeGrad = create("UIGradient", { Color = ColorSequence.new({
 		ColorSequenceKeypoint.new(0, Color3.fromRGB(122, 138, 255)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(46, 48, 58)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 110, 255)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(30, 38, 40)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(40, 140, 255)),
 	}) }, mainStroke)
 	table.insert(connections, RunService.RenderStepped:Connect(function()
 		strokeGrad.Rotation = (os.clock() * 40) % 360 -- slow animated border
@@ -304,24 +305,50 @@ do
 		end))
 	end
 
-	-- sidebar ------------------------------------------------------
-	local sidebar = create("Frame", { Size = UDim2.new(0, SIDE_W, 1, 0), BackgroundColor3 = C.Side, BorderSizePixel = 0 }, main)
-	create("Frame", { Size = UDim2.new(0, 1, 1, 0), Position = UDim2.new(1, -1, 0, 0), BackgroundColor3 = C.Line, BorderSizePixel = 0, ZIndex = 2 }, sidebar)
-
-	local logoArea = create("Frame", { Size = UDim2.new(1, 0, 0, HEAD_H), BackgroundTransparency = 1, Active = true }, sidebar)
-	makeDraggable(logoArea, main, true)
+	-- header (full width, like the reference) ------------------------
+	local header = create("Frame", { Size = UDim2.new(1, 0, 0, HEAD_H), BackgroundTransparency = 1, Active = true }, main)
+	makeDraggable(header, main, true)
 	create("TextLabel", {
-		BackgroundTransparency = 1, RichText = true, Text = 'ITEM ESP <font color="#7A7D8A" size="30">HUB</font>',
-		TextSize = 38, Font = F.Black, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left,
-		AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 40, 0, 62), Size = UDim2.new(1, -60, 0, 60),
-	}, logoArea)
+		BackgroundTransparency = 1, Text = "Item ESP Hub [ Free ]", TextSize = 42, Font = F.Bold, TextColor3 = C.White,
+		TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 56, 0, 24), Size = UDim2.new(0, 760, 0, 56),
+	}, header)
+	create("TextLabel", {
+		BackgroundTransparency = 1, Text = "Jujutsu Shenanigans  -  v1", TextSize = 28, Font = F.Reg, TextColor3 = C.SubText,
+		TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 56, 0, 82), Size = UDim2.new(0, 760, 0, 40),
+	}, header)
+	local badge = create("ImageLabel", {
+		Size = UDim2.fromOffset(104, 104), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 10),
+		BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Image = "", ZIndex = 5,
+	}, main)
+	create("UICorner", { CornerRadius = UDim.new(1, 0) }, badge)
+	stroke(badge, Color3.fromRGB(60, 140, 255), 4)
+	loadAvatar(badge)
+
+	local minBtn = create("TextButton", {
+		Size = UDim2.fromOffset(70, 70), Position = UDim2.new(0, DESIGN_W - 40 - 70 - 70, 0, 36), BackgroundTransparency = 1,
+		Text = "—", TextSize = 40, Font = F.Bold, TextColor3 = C.BarLight, AutoButtonColor = false,
+	}, header)
+	local closeBtn = create("TextButton", {
+		Size = UDim2.fromOffset(70, 70), Position = UDim2.new(0, DESIGN_W - 40 - 70, 0, 36), BackgroundTransparency = 1,
+		Text = "✕", TextSize = 36, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = false,
+	}, header)
+	UI.closeBtn = closeBtn
+
+	local accentLine = create("Frame", { Size = UDim2.new(1, -40, 0, 3), Position = UDim2.new(0, 20, 0, HEAD_H), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, main)
+	create("UIGradient", { Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.15, 0.1), NumberSequenceKeypoint.new(0.85, 0.1), NumberSequenceKeypoint.new(1, 1),
+	}) }, accentLine)
+
+	-- sidebar ------------------------------------------------------
+	local sidebar = create("Frame", { Position = UDim2.new(0, 0, 0, HEAD_H + 3), Size = UDim2.new(0, SIDE_W, 1, -(HEAD_H + 3)), BackgroundTransparency = 1, BorderSizePixel = 0 }, main)
+	create("Frame", { Size = UDim2.new(0, 2, 1, -60), Position = UDim2.new(1, -2, 0, 24), BackgroundColor3 = C.Line, BorderSizePixel = 0 }, sidebar)
 
 	local sideScroll = create("ScrollingFrame", {
-		Position = UDim2.new(0, 0, 0, HEAD_H), Size = UDim2.new(1, 0, 1, -(HEAD_H + PROFILE_H)), BackgroundTransparency = 1,
+		Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, 0, 1, -PROFILE_H), BackgroundTransparency = 1,
 		BorderSizePixel = 0, ScrollBarThickness = 0, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
 	}, sidebar)
-	create("UIPadding", { PaddingTop = UDim.new(0, 8), PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 18), PaddingBottom = UDim.new(0, 12) }, sideScroll)
-	create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, sideScroll)
+	create("UIPadding", { PaddingTop = UDim.new(0, 16), PaddingLeft = UDim.new(0, 22), PaddingRight = UDim.new(0, 26), PaddingBottom = UDim.new(0, 12) }, sideScroll)
+	create("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }, sideScroll)
 
 	-- "Hide Username" support
 	local usernameLabels = {}
@@ -331,45 +358,27 @@ do
 		end
 	end
 
-	local profileBar = create("Frame", { Size = UDim2.new(1, -1, 0, PROFILE_H), Position = UDim2.new(0, 0, 1, -PROFILE_H), BackgroundColor3 = C.Side, BorderSizePixel = 0 }, sidebar)
-	create("Frame", { Size = UDim2.new(1, -40, 0, 1), Position = UDim2.new(0, 20, 0, 0), BackgroundColor3 = C.Line, BorderSizePixel = 0 }, profileBar)
-	local pAvatar = create("ImageLabel", { Size = UDim2.fromOffset(70, 70), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 28, 0.5, 0), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Image = "" }, profileBar)
+	local profileBar = create("Frame", { Size = UDim2.new(1, -2, 0, PROFILE_H), Position = UDim2.new(0, 0, 1, -PROFILE_H), BackgroundTransparency = 1, BorderSizePixel = 0 }, sidebar)
+	local pAvatar = create("ImageLabel", { Size = UDim2.fromOffset(66, 66), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 28, 0.5, 0), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Image = "" }, profileBar)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, pAvatar)
-	stroke(pAvatar, Color3.fromRGB(200, 202, 212), 2)
+	stroke(pAvatar, C.Accent, 2)
 	loadAvatar(pAvatar)
 	local pName = txt(profileBar, player.Name, 24, C.White, F.Bold)
-	pName.Position = UDim2.new(0, 114, 0.5, -16)
+	pName.Position = UDim2.new(0, 112, 0.5, -14)
 	pName.Size = UDim2.new(1, -130, 0, 32)
 	table.insert(usernameLabels, { label = pName, real = player.Name, hidden = "Hidden" })
-	local pGame = txt(profileBar, "Jujutsu Shenanigans", 20, C.SubText, F.Reg)
-	pGame.Position = UDim2.new(0, 114, 0.5, 18)
+	local pGame = txt(profileBar, "Free", 20, C.Accent, F.Reg)
+	pGame.Position = UDim2.new(0, 112, 0.5, 20)
 	pGame.Size = UDim2.new(1, -130, 0, 28)
 
-	-- content + header ---------------------------------------------
+	-- content: pill tabs on top, pages below ---------------------------
 	local CONTENT_W = DESIGN_W - SIDE_W
-	local content = create("Frame", { Position = UDim2.new(0, SIDE_W, 0, 0), Size = UDim2.new(1, -SIDE_W, 1, 0), BackgroundTransparency = 1 }, main)
-	local header = create("Frame", { Size = UDim2.new(1, 0, 0, HEAD_H), BackgroundTransparency = 1, Active = true }, content)
-	makeDraggable(header, main, true)
-
-	local headIcon = create("TextLabel", {
-		Size = UDim2.fromOffset(64, 64), Position = UDim2.new(0, 26, 0, 30), BackgroundColor3 = C.IconBox, BorderSizePixel = 0,
-		Text = "◎", TextSize = 30, Font = F.Med, TextColor3 = C.White,
-	}, header)
-	corner(headIcon, 16)
-	local crumb = create("TextLabel", {
-		BackgroundTransparency = 1, RichText = true, Text = "", TextSize = 28, Font = F.Med, TextColor3 = C.White,
-		TextXAlignment = Enum.TextXAlignment.Left, AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 112, 0, 62), Size = UDim2.new(0, 560, 0, 44),
-	}, header)
-
-	local minBtn = create("TextButton", { Size = UDim2.fromOffset(62, 62), Position = UDim2.new(0, CONTENT_W - 24 - 62 - 10 - 62, 0, 32), BackgroundTransparency = 1, Text = "" }, header)
-	create("Frame", { Size = UDim2.new(0, 24, 0, 3), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundColor3 = C.BarLight, BorderSizePixel = 0 }, minBtn)
-	local closeBtn = create("TextButton", { Size = UDim2.fromOffset(62, 62), Position = UDim2.new(0, CONTENT_W - 24 - 62, 0, 32), BackgroundTransparency = 1, Text = "" }, header)
-	for _, rot in ipairs({ 45, -45 }) do
-		create("Frame", { Size = UDim2.new(0, 30, 0, 3), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), Rotation = rot, BackgroundColor3 = C.White, BorderSizePixel = 0 }, closeBtn)
-	end
-	UI.closeBtn = closeBtn
-
-	local pageHolder = create("Frame", { Position = UDim2.new(0, 0, 0, HEAD_H), Size = UDim2.new(1, 0, 1, -HEAD_H), BackgroundTransparency = 1 }, content)
+	local content = create("Frame", { Position = UDim2.new(0, SIDE_W, 0, HEAD_H + 3), Size = UDim2.new(1, -SIDE_W, 1, -(HEAD_H + 3)), BackgroundTransparency = 1 }, main)
+	local TAB_H = 118
+	local tabBar = create("Frame", { Size = UDim2.new(1, 0, 0, TAB_H), BackgroundTransparency = 1 }, content)
+	create("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 14), VerticalAlignment = Enum.VerticalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder }, tabBar)
+	create("UIPadding", { PaddingLeft = UDim.new(0, 28) }, tabBar)
+	local pageHolder = create("Frame", { Position = UDim2.new(0, 0, 0, TAB_H), Size = UDim2.new(1, 0, 1, -TAB_H), BackgroundTransparency = 1 }, content)
 
 	-- pages / sections / rows -----------------------------------------
 	local pages = {}
@@ -378,31 +387,25 @@ do
 			Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.Bar,
 			AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), Visible = false,
 		}, pageHolder)
-		local function column(x, w)
-			local col = create("Frame", { Size = UDim2.new(0, w, 0, 0), Position = UDim2.new(0, x, 0, 6), BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.Y }, sf)
-			create("UIListLayout", { Padding = UDim.new(0, 18), SortOrder = Enum.SortOrder.LayoutOrder }, col)
-			return col
-		end
-		pages[name] = { frame = sf, left = column(24, 662), right = column(712, 676) }
+		local col = create("Frame", { Size = UDim2.new(0, CONTENT_W - 56, 0, 0), Position = UDim2.new(0, 28, 0, 0), BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.Y }, sf)
+		create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, col)
+		pages[name] = { frame = sf, left = col, right = col } -- one wide column, like the reference
 		return pages[name]
 	end
 
 	local function section(parent, title, order, icon)
-		local s = create("Frame", { Size = UDim2.new(1, 0, 0, 0), BackgroundColor3 = C.Panel, BorderSizePixel = 0, AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = order or 1 }, parent)
-		corner(s, 24)
-		create("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, s)
+		local n = (parent:GetAttribute("n") or 0) + 1
+		parent:SetAttribute("n", n)
+		local s = create("Frame", { Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, BorderSizePixel = 0, AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = n }, parent)
+		create("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder }, s)
 		local obj = { frame = s, n = 0, collapsed = false, rows = {}, dividers = {} }
-		local hdr = create("TextButton", { Size = UDim2.new(1, 0, 0, 98), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, LayoutOrder = 0 }, s)
-		local ib = create("TextLabel", { Size = UDim2.fromOffset(58, 58), Position = UDim2.new(0, 24, 0.5, -29), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = icon or "◎", TextSize = 28, Font = F.Med, TextColor3 = C.White }, hdr)
-		corner(ib, 14)
-		local t = txt(hdr, title, 27, C.White, F.Bold)
-		t.Position = UDim2.new(0, 100, 0.5, 0)
-		t.Size = UDim2.new(1, -200, 0, 40)
-		local chev = txt(hdr, "v", 18, C.BarLight, F.Bold, Enum.TextXAlignment.Center)
-		chev.AnchorPoint = Vector2.new(0.5, 0.5)
-		chev.Size = UDim2.new(0, 30, 0, 30)
-		chev.Position = UDim2.new(1, -44, 0.5, 0)
-		create("Frame", { Size = UDim2.new(1, -48, 0, 2), Position = UDim2.new(0, 24, 1, -2), BackgroundColor3 = C.Line, BorderSizePixel = 0 }, hdr)
+		local hdr = create("TextButton", { Size = UDim2.new(1, 0, 0, 84), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, LayoutOrder = 0 }, s)
+		local mid = create("Frame", { Size = UDim2.new(0, 0, 0, 44), AutomaticSize = Enum.AutomaticSize.X, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundTransparency = 1 }, hdr)
+		create("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 18), SortOrder = Enum.SortOrder.LayoutOrder }, mid)
+		create("Frame", { Size = UDim2.fromOffset(96, 3), BackgroundColor3 = C.Accent, BorderSizePixel = 0, LayoutOrder = 1 }, mid)
+		create("TextLabel", { Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X, BackgroundTransparency = 1, Text = (icon or "◎") .. "  " .. title, TextSize = 31, Font = F.Semi, TextColor3 = C.White, LayoutOrder = 2 }, mid)
+		create("Frame", { Size = UDim2.fromOffset(96, 3), BackgroundColor3 = C.Accent, BorderSizePixel = 0, LayoutOrder = 3 }, mid)
+		local chev = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 40), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -30, 0.5, 0), Text = "v", TextSize = 22, Font = F.Bold, TextColor3 = C.BarLight }, hdr)
 		hdr.MouseButton1Click:Connect(function()
 			obj.collapsed = not obj.collapsed
 			chev.Text = obj.collapsed and ">" or "v"
@@ -412,8 +415,10 @@ do
 	end
 
 	local function row(sec, height)
-		local r = create("Frame", { Size = UDim2.new(1, 0, 0, height), BackgroundTransparency = 1, LayoutOrder = sec.n + 1 }, sec.frame)
-		local div = create("Frame", { Size = UDim2.new(1, -62, 0, 1), Position = UDim2.new(0, 31, 1, -1), BackgroundColor3 = C.Line, BorderSizePixel = 0 }, r)
+		local r = create("Frame", { Size = UDim2.new(1, 0, 0, height), BackgroundColor3 = C.Panel, BorderSizePixel = 0, LayoutOrder = sec.n + 1 }, sec.frame)
+		corner(r, 22)
+		create("Frame", { Size = UDim2.new(0, 5, 0, math.max(height - 40, 24)), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, r)
+		local div = create("Frame", { Size = UDim2.new(1, -62, 0, 1), Position = UDim2.new(0, 31, 1, -1), BackgroundTransparency = 1, BorderSizePixel = 0 }, r)
 		sec.n = sec.n + 1
 		table.insert(sec.rows, r)
 		table.insert(sec.dividers, div)
@@ -423,7 +428,7 @@ do
 	local function finish(sec)
 		local last = sec.dividers[#sec.dividers]
 		if last then last.Visible = false end
-		create("Frame", { Size = UDim2.new(1, 0, 0, 14), BackgroundTransparency = 1, LayoutOrder = 9999 }, sec.frame)
+		create("Frame", { Size = UDim2.new(1, 0, 0, 10), BackgroundTransparency = 1, LayoutOrder = 9999 }, sec.frame)
 	end
 
 	local function rowLabel(r, name, cy)
@@ -639,7 +644,7 @@ do
 		}, r)
 		corner(btn, 16)
 		btn.AutoButtonColor = false
-		btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(46, 49, 70) }):Play() end)
+		btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(32, 54, 56) }):Play() end)
 		btn.MouseLeave:Connect(function() TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundColor3 = C.IconBox }):Play() end)
 		btn.MouseButton1Click:Connect(function()
 			btn.BackgroundColor3 = C.Accent
@@ -932,6 +937,7 @@ do
 		finish(c)
 
 		local d = section(p.left, "Notifications", 2, "◍")
+		addDropdown(d, "Notification Style", "NotifyStyle", { "Hub", "Roblox" })
 		addCheckbox(d, "Status Notifications", "StatusNotify")
 		addSlider(d, "Notification Time", "NotifyDuration", 2, 15, "s")
 		addButton(d, "Test Roblox Notification", function() notify("Item ESP", "Roblox notifications are working") end)
@@ -1018,8 +1024,37 @@ do
 		finish(t)
 	end, tabFail("Utility"))
 
-	-- sidebar entries -----------------------------------------------
-	local subButtons, catOf, iconOf = {}, {}, {}
+	xpcall(function() -- Server
+		local p = newPage("Server")
+		local a = section(p.left, "Script Status", 1, "■")
+		UI.srvStatus = addInfo(a, "Fps - | Ping - | Executor")
+		UI.srvPlayers = addInfo(a, "Players: -")
+		UI.srvAge = addInfo(a, "Server time: -")
+		finish(a)
+		local b = section(p.left, "Server Tools", 2, "■")
+		addButton(b, "Copy Job ID", function(btn)
+			local ok = pcall(function() setclipboard(game.JobId) end)
+			flash(btn, ok and "Copied!" or "No clipboard", "Copy Job ID")
+		end)
+		addInput(b, "Join Job ID", "JoinJobId", "paste a Job ID...")
+		addButton(b, "Join This Job ID", function(btn)
+			flash(btn, "Joining...", "Join This Job ID")
+			Feat.joinJob(Config.JoinJobId)
+		end)
+		addButton(b, "Server Hop", function(btn)
+			flash(btn, "Hopping...", "Server Hop")
+			Feat.hop()
+		end)
+		finish(b)
+		local c = section(p.left, "Auto", 3, "■")
+		addCheckbox(c, "Auto Rejoin When Disconnected", "AutoRejoin")
+		addCheckbox(c, "Auto Clicker (equipped tool)", "AutoClick")
+		addSlider(c, "Clicks Per Second", "ClickCPS", 1, 30, "")
+		finish(c)
+	end, tabFail("Server"))
+
+	-- sidebar entries (categories) + pill tabs (pages), like the reference ---
+	local catBtns, pillBtns, catPages, pageCat, lastPage = {}, {}, {}, {}, {}
 	local function selectPage(name)
 		for n, page in pairs(pages) do
 			local show = (n == name)
@@ -1029,52 +1064,53 @@ do
 			end
 			page.frame.Visible = show
 		end
-		for n, b in pairs(subButtons) do
-			local sel = (n == name)
+		local cat = pageCat[name]
+		lastPage[cat] = name
+		for c, b in pairs(catBtns) do
+			local sel = (c == cat)
 			b.btn.BackgroundTransparency = sel and 0 or 1
 			b.marker.Visible = sel
 			b.text.TextColor3 = sel and C.White or C.SubText
-			b.icon.TextColor3 = sel and C.White or C.SubText
+			b.icon.TextColor3 = sel and C.Accent or C.SubText
 		end
-		crumb.Text = string.format('<font color="#C9CBD6">%s</font>  <font color="#6F7280">v</font>  <b>%s</b>', catOf[name] or "", name)
-		headIcon.Text = iconOf[name] or "◎"
+		for n, p in pairs(pillBtns) do
+			local sel = (n == name)
+			p.btn.Visible = (pageCat[n] == cat) and #catPages[cat] > 1
+			p.btn.BackgroundColor3 = sel and C.Selected or C.Panel
+			p.btn.TextColor3 = sel and C.White or C.SubText
+		end
 	end
 
 	local catOrder = 0
 	local function addCategory(title, subs)
 		catOrder = catOrder + 1
-		local cat = create("Frame", { Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = catOrder }, sideScroll)
-		create("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, cat)
-		local hdr = create("TextButton", { Size = UDim2.new(1, 0, 0, 72), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, LayoutOrder = 0 }, cat)
-		local t = txt(hdr, string.upper(title), 22, C.SubText, F.Semi)
-		t.Position = UDim2.new(0, 30, 0.5, 0)
-		local chev = txt(hdr, "v", 16, C.BarLight, F.Bold, Enum.TextXAlignment.Center)
-		chev.AnchorPoint = Vector2.new(0.5, 0.5)
-		chev.Size = UDim2.new(0, 24, 0, 24)
-		chev.Position = UDim2.new(1, -40, 0.5, 0)
-		local subFrame = create("Frame", { Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 1 }, cat)
-		create("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, subFrame)
-		hdr.MouseButton1Click:Connect(function()
-			subFrame.Visible = not subFrame.Visible
-			chev.Text = subFrame.Visible and "v" or ">"
-		end)
+		catPages[title] = {}
+		local btn = create("TextButton", { Size = UDim2.new(1, 0, 0, 96), BackgroundColor3 = C.Selected, BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", AutoButtonColor = false, LayoutOrder = catOrder }, sideScroll)
+		corner(btn, 22)
+		local marker = create("Frame", { Size = UDim2.new(0, 5, 0, 54), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0, Visible = false }, btn)
+		corner(marker, 3)
+		local ic = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(44, 44), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 30, 0.5, 0), Text = subs[1][2], TextSize = 32, Font = F.Med, TextColor3 = C.SubText }, btn)
+		local st = txt(btn, title, 28, C.SubText, F.Med)
+		st.Position = UDim2.new(0, 92, 0.5, 0)
+		st.Size = UDim2.new(1, -110, 0, 38)
+		catBtns[title] = { btn = btn, marker = marker, text = st, icon = ic }
+		btn.MouseButton1Click:Connect(function() selectPage(lastPage[title] or subs[1][1]) end)
 		for i, entry in ipairs(subs) do
-			local name, icon = entry[1], entry[2]
-			catOf[name], iconOf[name] = title, icon
-			local btn = create("TextButton", { Size = UDim2.new(1, 0, 0, 86), BackgroundColor3 = C.Selected, BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", AutoButtonColor = false, LayoutOrder = i }, subFrame)
-			corner(btn, 18)
-			local marker = create("Frame", { Size = UDim2.new(0, 5, 0, 44), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 2, 0.5, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0, Visible = false }, btn)
-			corner(marker, 3)
-			local ic = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 40), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 26, 0.5, 0), Text = icon, TextSize = 28, Font = F.Med, TextColor3 = C.SubText }, btn)
-			local st = txt(btn, name, 26, C.SubText, F.Reg)
-			st.Position = UDim2.new(0, 86, 0.5, 0)
-			st.Size = UDim2.new(1, -100, 0, 36)
-			subButtons[name] = { btn = btn, marker = marker, text = st, icon = ic }
-			btn.MouseButton1Click:Connect(function() selectPage(name) end)
+			local name, ico = entry[1], entry[2]
+			pageCat[name] = title
+			table.insert(catPages[title], name)
+			local pb = create("TextButton", {
+				Size = UDim2.new(0, 0, 0, 76), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = C.Panel, BorderSizePixel = 0,
+				Text = ico .. "  " .. name, TextSize = 27, Font = F.Med, TextColor3 = C.SubText, AutoButtonColor = false, Visible = false, LayoutOrder = catOrder * 10 + i,
+			}, tabBar)
+			corner(pb, 20)
+			create("UIPadding", { PaddingLeft = UDim.new(0, 30), PaddingRight = UDim.new(0, 30) }, pb)
+			pillBtns[name] = { btn = pb }
+			pb.MouseButton1Click:Connect(function() selectPage(name) end)
 		end
 	end
 
-	addCategory("Main", { { "Home", "⌂" } })
+	addCategory("Main", { { "Home", "⌂" }, { "Server", "■" } })
 	addCategory("Visuals", { { "Item ESP", "◎" }, { "Player ESP", "◉" } })
 	addCategory("Alerts", { { "Alerts", "▲" } })
 	addCategory("Items", { { "Item List", "◈" }, { "Pickup", "◆" } })
@@ -1197,6 +1233,48 @@ do
 			end
 		end
 		for i = n + 1, #radarDots do radarDots[i].Visible = false end
+	end
+
+	-- hub-style notifications: dark card bottom-right with icon, title, text and a countdown bar (like the reference)
+	local toastHolder = create("Frame", { Name = "Toasts", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -24, 1, -24), Size = UDim2.fromOffset(700, 700), BackgroundTransparency = 1, ZIndex = 200 }, screenGui)
+	local toastScale = create("UIScale", { Scale = 1 }, toastHolder)
+	local function fitToast() toastScale.Scale = math.clamp(screenGui.AbsoluteSize.Y / 1080, 0.45, 1.3) end
+	fitToast()
+	table.insert(connections, screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitToast))
+	create("UIListLayout", { Padding = UDim.new(0, 12), SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Bottom, HorizontalAlignment = Enum.HorizontalAlignment.Right }, toastHolder)
+	local toastN = 0
+	function UI.toast(title, text, kind)
+		toastN = toastN + 1
+		local alert = (kind == "alert")
+		local accent = alert and Color3.fromRGB(255, 150, 40) or Color3.fromRGB(70, 140, 255)
+		local dur = math.max(Config.NotifyDuration or 6, 2)
+		local card = create("CanvasGroup", { Size = UDim2.fromOffset(700, 170), BackgroundColor3 = Color3.fromRGB(24, 26, 28), BorderSizePixel = 0, LayoutOrder = toastN, GroupTransparency = 1, ZIndex = 201 }, toastHolder)
+		corner(card, 26)
+		local ic = create("TextLabel", { Size = UDim2.fromOffset(46, 46), Position = UDim2.fromOffset(30, 26), BackgroundTransparency = 1, Text = alert and "!" or "i", TextSize = 28, Font = F.Bold, TextColor3 = accent }, card)
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }, ic)
+		stroke(ic, accent, 3)
+		create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -120, 0, 48), Position = UDim2.fromOffset(98, 25), Text = tostring(title), TextSize = 36, Font = F.Bold, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd }, card)
+		create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -60, 0, 40), Position = UDim2.fromOffset(30, 88), Text = tostring(text or ""), TextSize = 29, Font = F.Reg, TextColor3 = Color3.fromRGB(150, 153, 160), TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd }, card)
+		local bar = create("Frame", { Size = UDim2.new(1, -60, 0, 8), Position = UDim2.fromOffset(30, 140), BackgroundColor3 = Color3.fromRGB(52, 54, 58), BorderSizePixel = 0 }, card)
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }, bar)
+		local fill = create("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = accent, BorderSizePixel = 0 }, bar)
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }, fill)
+		TweenService:Create(card, TweenInfo.new(0.25), { GroupTransparency = 0 }):Play()
+		TweenService:Create(fill, TweenInfo.new(dur, Enum.EasingStyle.Linear), { Size = UDim2.new(1, 0, 1, 0) }):Play()
+		task.delay(dur, function()
+			if not card.Parent then return end
+			TweenService:Create(card, TweenInfo.new(0.3), { GroupTransparency = 1 }):Play()
+			task.delay(0.35, function() if card.Parent then card:Destroy() end end)
+		end)
+		local kids = {}
+		for _, k in ipairs(toastHolder:GetChildren()) do
+			if k:IsA("CanvasGroup") then kids[#kids + 1] = k end
+		end
+		table.sort(kids, function(x, y) return x.LayoutOrder < y.LayoutOrder end)
+		while #kids > 3 do
+			kids[1]:Destroy()
+			table.remove(kids, 1)
+		end
 	end
 
 	function UI.refreshList(entries, total)
@@ -2549,6 +2627,62 @@ table.insert(connections, UserInputService.InputBegan:Connect(function(input, gp
 	local hit = Workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
 	if hit then hrp.CFrame = CFrame.new(hit.Position + Vector3.new(0, 3.5, 0)) end
 end))
+
+-- auto clicker, auto rejoin, job id tools, status card
+Feat.joinJob = function(id)
+	id = string.gsub(tostring(id or ""), "%s", "")
+	if id == "" then
+		notify("Join Job ID", "Type a Job ID first", true)
+		return
+	end
+	pcall(function() game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, id, player) end)
+end
+
+task.spawn(function()
+	while running do
+		if Config.AutoClick then
+			local char = player.Character
+			local tool = char and char:FindFirstChildOfClass("Tool")
+			if tool then pcall(function() tool:Activate() end) end
+			task.wait(1 / math.max(Config.ClickCPS, 1))
+		else
+			task.wait(0.25)
+		end
+	end
+end)
+
+task.spawn(function()
+	local ok, overlay = pcall(function()
+		return game:GetService("CoreGui"):WaitForChild("RobloxPromptGui", 10):WaitForChild("promptOverlay", 10)
+	end)
+	if ok and overlay then
+		table.insert(connections, overlay.ChildAdded:Connect(function(c)
+			if Config.AutoRejoin and c.Name == "ErrorPrompt" then
+				task.wait(2)
+				Feat.rejoin()
+			end
+		end))
+	end
+end)
+
+task.spawn(function()
+	local exec = "Executor"
+	pcall(function()
+		local n, v = identifyexecutor()
+		exec = tostring(n) .. (v and (" " .. tostring(v)) or "")
+	end)
+	while running do
+		if UI.srvStatus then
+			local fps = UI.stats and UI.stats["FPS"] and UI.stats["FPS"].Text or "-"
+			local png = UI.stats and UI.stats["Ping"] and UI.stats["Ping"].Text or "-"
+			UI.srvStatus.Text = "Fps " .. fps .. " | Ping " .. png .. " | " .. exec
+			UI.srvPlayers.Text = "Players: " .. #Players:GetPlayers() .. "/" .. Players.MaxPlayers
+			local t = math.floor(Workspace.DistributedGameTime)
+			UI.srvAge.Text = string.format("Server time: %dh %02dm %02ds", t // 3600, (t % 3600) // 60, t % 60)
+		end
+		task.wait(1)
+	end
+end)
 
 -- undo everything when the script is unloaded
 Feat.cleanup = function()
