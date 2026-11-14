@@ -1,4 +1,4 @@
--- CodeBot V1.4 | Roblox Luau (Delta compatible)
+-- CodeBot V1.5 | Roblox Luau (Delta compatible)
 -- JJS Item ESP  |  Atom-style GUI  |  HvH tab (orbit / spin)  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
 -- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
@@ -50,7 +50,7 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 65, LogoSize = 64, -- drag speed in % (60 = 0.6), minimized logo size in px
+	DragSpeed = 65, LogoSize = 64, ClickSound = true, ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
 	-- notifications (Roblox's own notification popup)
 	StatusNotify = true, NotifyDuration = 6, NotifyStyle = "Hub",
@@ -281,8 +281,27 @@ do
 		Size = UDim2.fromOffset(DESIGN_W, DESIGN_H), BackgroundColor3 = C.Window, BackgroundTransparency = 0.08, BorderSizePixel = 0,
 	}, screenGui)
 	corner(main, 30)
-	stroke(main, Color3.fromRGB(32, 72, 72), 2)
+	local mainStroke = stroke(main, Color3.fromRGB(32, 72, 72), 2)
 	UI.main = main
+
+	-- click sound (one reusable Sound, volume / type from Settings)
+	local CLICK_IDS = { Click = "rbxasset://sounds/button.wav", Snap = "rbxasset://sounds/snap.mp3", Switch = "rbxasset://sounds/switch.mp3" }
+	local clickSnd = Instance.new("Sound")
+	clickSnd.Name = "CodeBotClick"
+	pcall(function() clickSnd.Parent = SoundService end)
+	UI.clickSnd = clickSnd
+	local lastClickId
+	function UI.click()
+		if not Config.ClickSound then return end
+		local id = CLICK_IDS[Config.ClickSoundType] or CLICK_IDS.Click
+		if id ~= lastClickId then
+			lastClickId = id
+			clickSnd.SoundId = id
+		end
+		clickSnd.Volume = Config.ClickVolume / 5
+		clickSnd.TimePosition = 0
+		pcall(function() clickSnd:Play() end)
+	end
 
 	local uiScale = create("UIScale", { Scale = 1 }, main)
 	local function updateScale()
@@ -367,6 +386,7 @@ do
 	UI.closeBtn = closeBtn
 	UI.scaleMul = 1
 	maxBtn.MouseButton1Click:Connect(function()
+		UI.click()
 		UI.scaleMul = (UI.scaleMul == 1) and 1.18 or 1
 		updateScale()
 	end)
@@ -377,6 +397,7 @@ do
 	}, header)
 	corner(searchBox, 18)
 	searchBtn.MouseButton1Click:Connect(function()
+		UI.click()
 		searchBox.Visible = not searchBox.Visible
 		if searchBox.Visible then searchBox:CaptureFocus() end
 	end)
@@ -405,7 +426,10 @@ do
 		Text = "♥", TextSize = 38, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = false,
 	}, sidebar)
 	corner(heartBtn, 22)
-	heartBtn.MouseButton1Click:Connect(function() if UI.openPage then UI.openPage("Settings") end end)
+	heartBtn.MouseButton1Click:Connect(function()
+		UI.click()
+		if UI.openPage then UI.openPage("Settings") end
+	end)
 
 	-- content: pill tabs on top, pages below ---------------------------
 	local CONTENT_W = DESIGN_W - SIDE_W
@@ -446,6 +470,7 @@ do
 		create("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) }) }, l2)
 		local chev = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(44, 44), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -150, 0.5, 0), Text = "v", TextSize = 26, Font = F.Bold, TextColor3 = C.BarLight }, hdr)
 		hdr.MouseButton1Click:Connect(function()
+			UI.click()
 			obj.collapsed = not obj.collapsed
 			chev.Text = obj.collapsed and ">" or "v"
 			for _, r in ipairs(obj.rows) do r.Visible = (not obj.collapsed) and not r:GetAttribute("hidden") end
@@ -499,6 +524,7 @@ do
 		end
 		table.insert(syncers, function() apply(Config[key]) end)
 		track.MouseButton1Click:Connect(function()
+			UI.click()
 			local v = not Config[key]
 			Config[key] = v
 			apply(v)
@@ -544,6 +570,7 @@ do
 		area.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				dragging = true
+				UI.click()
 				update(input.Position.X)
 			end
 		end)
@@ -573,6 +600,7 @@ do
 			hex.Text = hexOf(Config[key])
 		end)
 		box.MouseButton1Click:Connect(function()
+			UI.click()
 			i = i % #palette + 1
 			Config[key] = palette[i]
 			swatch.BackgroundColor3 = palette[i]
@@ -629,6 +657,7 @@ do
 			}, list)
 			create("UIPadding", { PaddingLeft = UDim.new(0, 26) }, b)
 			b.MouseButton1Click:Connect(function()
+				UI.click()
 				Config[key] = opt
 				cur.Text = opt
 				setOpen(false)
@@ -636,7 +665,10 @@ do
 			end)
 		end
 		table.insert(syncers, function() cur.Text = Config[key] end)
-		box.MouseButton1Click:Connect(function() setOpen(not open) end)
+		box.MouseButton1Click:Connect(function()
+			UI.click()
+			setOpen(not open)
+		end)
 	end
 
 	local function addKeybind(sec, name, key, onChange)
@@ -650,6 +682,7 @@ do
 		local waiting = false
 		table.insert(syncers, function() btn.Text = Config[key] end)
 		btn.MouseButton1Click:Connect(function()
+			UI.click()
 			waiting = not waiting
 			btn.Text = waiting and "press a key..." or Config[key]
 		end)
@@ -675,6 +708,7 @@ do
 		btn.MouseEnter:Connect(function() TweenService:Create(r, TweenInfo.new(0.12), { BackgroundColor3 = C.Selected }):Play() end)
 		btn.MouseLeave:Connect(function() TweenService:Create(r, TweenInfo.new(0.15), { BackgroundColor3 = C.Panel }):Play() end)
 		btn.MouseButton1Click:Connect(function()
+			UI.click()
 			r.BackgroundColor3 = Color3.fromRGB(24, 70, 70)
 			TweenService:Create(r, TweenInfo.new(0.3), { BackgroundColor3 = C.Panel }):Play()
 			callback(btn)
@@ -815,9 +849,11 @@ do
 			local hide = create("TextButton", { Size = UDim2.fromOffset(78, 46), Position = UDim2.new(1, -140, 0.5, -27), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = "Hide", TextSize = 18, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = true }, r)
 			corner(hide, 12)
 			tp.MouseButton1Click:Connect(function()
+				UI.click()
 				if UI.listEntries[i] then Actions.teleport(UI.listEntries[i]) end
 			end)
 			hide.MouseButton1Click:Connect(function()
+				UI.click()
 				if UI.listEntries[i] then Actions.hide(UI.listEntries[i]) end
 			end)
 			r.Visible = false
@@ -955,6 +991,9 @@ do
 		local w = section(p.left, "Window", 3, "◍")
 		addSlider(w, "Drag Speed (65% = 0.65)", "DragSpeed", 20, 150, "%")
 		addSlider(w, "Minimized Logo Size", "LogoSize", 36, 160, " px", function() if UI.applyLogo then UI.applyLogo() end end)
+		addCheckbox(w, "Click Sound", "ClickSound")
+		addDropdown(w, "Click Sound Type", "ClickSoundType", { "Click", "Snap", "Switch" }, function() UI.click() end)
+		addSlider(w, "Click Volume", "ClickVolume", 1, 10, "")
 		finish(w)
 	end, tabFail("Settings"))
 
@@ -1156,10 +1195,12 @@ do
 			end
 			local tpB, specB, orbB = small("TP", -330), small("Spec", -240), small("Orbit", -150)
 			tpB.MouseButton1Click:Connect(function()
+				UI.click()
 				local e = UI.plEntries[i]
 				if e then Feat.tpPlayer(e.plr.Name) end
 			end)
 			specB.MouseButton1Click:Connect(function()
+				UI.click()
 				local e = UI.plEntries[i]
 				if e then
 					Config.TPName = e.plr.Name
@@ -1169,6 +1210,7 @@ do
 				end
 			end)
 			orbB.MouseButton1Click:Connect(function()
+				UI.click()
 				local e = UI.plEntries[i]
 				if e then
 					Config.OrbitTarget = e.plr.Name
@@ -1257,6 +1299,7 @@ do
 			end
 			page.frame.Visible = show
 		end
+		UI.currentPage = name
 		local cat = pageCat[name]
 		lastPage[cat] = name
 		for c, b in pairs(catBtns) do
@@ -1298,7 +1341,10 @@ do
 		st.Position = UDim2.new(0, 104, 0.5, 0)
 		st.Size = UDim2.new(1, -120, 0, 46)
 		catBtns[title] = { btn = btn, marker = marker, text = st, icon = ic }
-		btn.MouseButton1Click:Connect(function() selectPage(lastPage[title] or subs[1][1]) end)
+		btn.MouseButton1Click:Connect(function()
+			UI.click()
+			selectPage(lastPage[title] or subs[1][1])
+		end)
 		for i, entry in ipairs(subs) do
 			local name, ico = entry[1], entry[2]
 			pageCat[name] = title
@@ -1310,7 +1356,10 @@ do
 			corner(pb, 24)
 			create("UIPadding", { PaddingLeft = UDim.new(0, 32), PaddingRight = UDim.new(0, 32) }, pb)
 			pillBtns[name] = { btn = pb }
-			pb.MouseButton1Click:Connect(function() selectPage(name) end)
+			pb.MouseButton1Click:Connect(function()
+				UI.click()
+				selectPage(name)
+			end)
 		end
 	end
 
@@ -1334,6 +1383,7 @@ do
 	local miniAv = create("ImageLabel", { Size = UDim2.new(1, -8, 1, -8), Position = UDim2.fromOffset(4, 4), BackgroundTransparency = 1, Image = "" }, logoBtn)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, miniAv)
 	loadAvatar(miniAv)
+	local logoScale = create("UIScale", { Scale = 1 }, logoBtn)
 	function UI.applyLogo()
 		local s = math.clamp(Config.LogoSize, 36, 160)
 		logoBtn.Size = UDim2.fromOffset(s, s)
@@ -1341,14 +1391,61 @@ do
 	end
 	UI.applyLogo()
 
+	-- open animation: window scales up with a bounce, slides in and fades in; its page slides up
+	local busy = false
+	local function popIn()
+		updateScale()
+		local full = uiScale.Scale
+		local pos = main.Position
+		uiScale.Scale = full * 0.8
+		main.Position = pos + UDim2.fromOffset(0, 40)
+		main.BackgroundTransparency = 1
+		mainStroke.Transparency = 1
+		TweenService:Create(uiScale, TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = full }):Play()
+		TweenService:Create(main, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Position = pos, BackgroundTransparency = 0.08 }):Play()
+		TweenService:Create(mainStroke, TweenInfo.new(0.5), { Transparency = 0 }):Play()
+		local pg = pages[UI.currentPage or "Status"]
+		if pg then
+			pg.frame.Position = UDim2.new(0, 0, 0, 34)
+			TweenService:Create(pg.frame, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Position = UDim2.new(0, 0, 0, 0) }):Play()
+		end
+	end
+	UI.popIn = popIn
+
+	-- logo animation: spins in with a bounce
+	local function logoIn()
+		logoScale.Scale = 0.2
+		logoBtn.Rotation = -180
+		TweenService:Create(logoScale, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		TweenService:Create(logoBtn, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Rotation = 0 }):Play()
+	end
+
 	local function showMain(v)
-		main.Visible = v
-		logoBtn.Visible = not v
-		if v then -- pop-in animation
-			updateScale()
+		if busy then return end
+		busy = true
+		if v then
+			-- logo shrinks away, then the window pops in
+			TweenService:Create(logoScale, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0 }):Play()
+			task.delay(0.16, function()
+				logoBtn.Visible = false
+				main.Visible = true
+				popIn()
+				busy = false
+			end)
+		else
+			-- window shrinks and fades, then the logo spins in
 			local full = uiScale.Scale
-			uiScale.Scale = full * 0.9
-			TweenService:Create(uiScale, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = full }):Play()
+			TweenService:Create(uiScale, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = full * 0.85 }):Play()
+			TweenService:Create(main, TweenInfo.new(0.2), { BackgroundTransparency = 1 }):Play()
+			task.delay(0.21, function()
+				main.Visible = false
+				main.BackgroundTransparency = 0.08
+				mainStroke.Transparency = 0
+				updateScale()
+				logoBtn.Visible = true
+				logoIn()
+				busy = false
+			end)
 		end
 	end
 	do
@@ -1371,11 +1468,18 @@ do
 		table.insert(connections, UserInputService.InputEnded:Connect(function(input)
 			if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
 				dragging = false
-				if not moved then showMain(true) end
+				if not moved then
+					UI.click()
+					showMain(true)
+				end
 			end
 		end))
 	end
-	minBtn.MouseButton1Click:Connect(function() showMain(false) end)
+	minBtn.MouseButton1Click:Connect(function()
+		UI.click()
+		showMain(false)
+	end)
+	task.defer(popIn) -- opening animation when the script starts
 
 	-- radar overlay (drag it anywhere; stays visible while minimized) -----
 	local radar = create("Frame", {
@@ -3333,6 +3437,7 @@ local function cleanup()
 	end
 	pcall(function() espFolder:Destroy() end)
 	pcall(function() screenGui:Destroy() end)
+	pcall(function() UI.clickSnd:Destroy() end)
 end
 
 Actions.unload = cleanup
