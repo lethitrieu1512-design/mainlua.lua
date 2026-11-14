@@ -1,5 +1,5 @@
--- CodeBot V1 | Roblox Luau (Delta compatible)
--- JJS Item ESP  |  Atom-style GUI  |  Roblox notifications
+-- CodeBot V1.1 | Roblox Luau (Delta compatible)
+-- JJS Item ESP  |  Atom-style GUI  |  HvH tab (orbit / spin)  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
 -- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
 
@@ -50,6 +50,7 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
+	DragSpeed = 60, LogoSize = 64, -- drag speed in % (60 = 0.6), minimized logo size in px
 
 	-- notifications (Roblox's own notification popup)
 	StatusNotify = true, NotifyDuration = 6, NotifyStyle = "Hub",
@@ -67,8 +68,13 @@ local Config = {
 	-- movement
 	SpeedOn = false, WalkSpeedVal = 50, JumpOn = false, JumpPowerVal = 100, InfJump = false,
 	Noclip = false, Fly = false, FlySpeed = 80,
-	OrbitOn = false, OrbitSpeed = 2000, OrbitRadius = 8, OrbitHeight = 0, OrbitTarget = "", OrbitStableCam = true,
 	ClickTP = false, SpectateOn = false, TPName = "",
+
+	-- HvH
+	OrbitOn = false, OrbitSpeed = 2000, OrbitRadius = 8, OrbitHeight = 0, OrbitTarget = "", OrbitStableCam = true,
+	OrbitMode = "Circle", OrbitTargetMode = "Closest", OrbitLock = true, OrbitFace = true, OrbitTeamCheck = true,
+	OrbitMaxDist = 1000, OrbitKey = "None", OrbitAttack = false, OrbitAttackCPS = 12,
+	SpinOn = false, SpinSpeed = 1500,
 
 	-- utility
 	AntiAFK = true, Fullbright = false, FOVOn = false, FOVVal = 90,
@@ -129,13 +135,13 @@ end
 loadConfig() -- settings from last time
 -- risky toggles never start switched on
 Config.Fly, Config.Noclip, Config.AutoCollect, Config.WalkCollect, Config.OrbitOn = false, false, false, false, false
-Config.SpectateOn, Config.ClickTP, Config.AutoClick = false, false, false
+Config.SpectateOn, Config.ClickTP, Config.AutoClick, Config.SpinOn, Config.OrbitAttack = false, false, false, false, false
 
 local connections = {}
 local running = true
 local UI = {}      -- filled by the GUI
 local Actions = {} -- filled by the ESP logic
-local Feat = {}    -- extra features (player ESP, movement, utility, auto collect)
+local Feat = {}    -- extra features (player ESP, movement, utility, auto collect, HvH)
 
 ---------------------------------------------------------------------
 -- SHARED HELPERS + ITEM CATEGORIES
@@ -277,7 +283,7 @@ do
 	updateScale()
 	table.insert(connections, screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateScale))
 
-	-- generic drag helper: moves `target`; scaled = divide by the window UIScale
+	-- generic drag helper: moves `target`; scaled = divide by the window UIScale. Drag speed = Config.DragSpeed / 100
 	local function makeDraggable(handle, target, scaled)
 		local dragging, dragStart, startPos = false, nil, nil
 		handle.InputBegan:Connect(function(input)
@@ -287,7 +293,7 @@ do
 		end)
 		table.insert(connections, UserInputService.InputChanged:Connect(function(input)
 			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-				local delta = input.Position - dragStart
+				local delta = (input.Position - dragStart) * (Config.DragSpeed / 100)
 				if scaled then delta = delta / uiScale.Scale end
 				target.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
 			end
@@ -465,6 +471,7 @@ do
 	function UI.sync()
 		for _, f in ipairs(syncers) do pcall(f) end
 		UI.applyUsername()
+		if UI.applyLogo then pcall(UI.applyLogo) end
 	end
 
 	local function addCheckbox(sec, name, key, onChange)
@@ -488,7 +495,7 @@ do
 			apply(v)
 			if onChange then onChange(v) end
 		end)
-		return function(v) -- setter (used by the hotkey)
+		return function(v) -- setter (used by the hotkeys)
 			Config[key] = v
 			apply(v)
 			if onChange then onChange(v) end
@@ -935,6 +942,11 @@ do
 		addSlider(d, "Notification Time", "NotifyDuration", 2, 15, "s")
 		addButton(d, "Test Roblox Notification", function() notify("Item ESP", "Roblox notifications are working") end)
 		finish(d)
+
+		local w = section(p.left, "Window", 3, "◍")
+		addSlider(w, "Drag Speed (60% = 0.6)", "DragSpeed", 20, 150, "%")
+		addSlider(w, "Minimized Logo Size", "LogoSize", 36, 160, " px", function() if UI.applyLogo then UI.applyLogo() end end)
+		finish(w)
 	end, tabFail("Settings"))
 
 	xpcall(function() -- Player ESP
@@ -968,18 +980,45 @@ do
 		addSlider(b, "Fly Speed", "FlySpeed", 10, 300, "")
 		addCheckbox(b, "Noclip", "Noclip")
 		finish(b)
+	end, tabFail("Movement"))
 
-		local o = section(p.left, "Orbit", 2, "▶")
-		addCheckbox(o, "Orbit (spin around target)", "OrbitOn", function(v)
-			notify("Orbit", v and "ON - orbiting the closest player" or "OFF", true)
+	xpcall(function() -- HvH (orbit, target, spin)
+		local p = newPage("HvH")
+
+		local o = section(p.left, "Orbit", 1, "◆")
+		UI.setOrbit = addCheckbox(o, "Orbit (spin around target)", "OrbitOn", function(v)
+			notify("Orbit", v and "ON - orbiting the target" or "OFF", true)
 		end)
-		addInput(o, "Target Name (empty = closest)", "OrbitTarget", "player name...")
-		addCheckbox(o, "Stable Camera (watch the target)", "OrbitStableCam")
+		addDropdown(o, "Orbit Mode", "OrbitMode", { "Circle", "Behind", "Random", "Vertical" })
 		addSlider(o, "Orbit Speed (deg/s)", "OrbitSpeed", 100, 20000, "")
 		addSlider(o, "Radius", "OrbitRadius", 2, 40, " st")
 		addSlider(o, "Height", "OrbitHeight", -10, 20, " st")
+		addCheckbox(o, "Face Target", "OrbitFace")
+		addCheckbox(o, "Stable Camera (watch the target)", "OrbitStableCam")
+		addKeybind(o, "Orbit Toggle Key", "OrbitKey")
+		UI.orbitInfo = addInfo(o, "Orbit off", "Orbit Status")
 		finish(o)
-	end, tabFail("Movement"))
+
+		local t = section(p.left, "Target", 2, "◆")
+		addDropdown(t, "Target Mode", "OrbitTargetMode", { "Closest", "Lowest HP" })
+		addInput(t, "Target Name (empty = auto)", "OrbitTarget", "player name...")
+		addCheckbox(t, "Lock Target Until Dead", "OrbitLock")
+		addCheckbox(t, "Skip Teammates", "OrbitTeamCheck")
+		addSlider(t, "Max Target Distance", "OrbitMaxDist", 50, 5000, " st")
+		addButton(t, "Teleport Behind Target", function(btn)
+			flash(btn, Feat.tpBehind() and "Teleported!" or "No target", "Teleport Behind Target")
+		end)
+		finish(t)
+
+		local c = section(p.left, "Combat", 3, "◆")
+		addCheckbox(c, "Auto Attack While Orbiting", "OrbitAttack")
+		addSlider(c, "Attack Speed (per sec)", "OrbitAttackCPS", 1, 30, "")
+		addCheckbox(c, "Spin In Place (anti-aim)", "SpinOn", function(v)
+			notify("Spin", v and "ON - spinning in place" or "OFF", true)
+		end)
+		addSlider(c, "Spin Speed (deg/s)", "SpinSpeed", 100, 20000, "")
+		finish(c)
+	end, tabFail("HvH"))
 
 	xpcall(function() -- Utility
 		local p = newPage("Utility")
@@ -1117,26 +1156,27 @@ do
 	addCategory("Alerts", { { "Alerts", "▲" } })
 	addCategory("Items", { { "Item List", "◈" }, { "Pickup", "◆" } })
 	addCategory("Player", { { "Movement", "▶" }, { "Utility", "■" } })
+	addCategory("HvH", { { "HvH", "◆" } })
 	addCategory("Settings", { { "Colors", "◐" }, { "Settings", "◍" } })
 	selectPage("Status")
 	UI.applyUsername()
 
-	-- small round logo while minimized (tap = restore, drag = move) --
+	-- small round logo while minimized (tap = restore, drag = move). Size comes from Config.LogoSize --
 	local logoBtn = create("TextButton", {
-		Name = "MiniLogo", Visible = false, Text = "", Size = UDim2.fromOffset(96, 96), AnchorPoint = Vector2.new(1, 0),
+		Name = "MiniLogo", Visible = false, Text = "", Size = UDim2.fromOffset(Config.LogoSize, Config.LogoSize), AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -110, 0, 30), BackgroundColor3 = C.Window, BorderSizePixel = 0, AutoButtonColor = false,
 	}, screenGui)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, logoBtn)
-	stroke(logoBtn, Color3.fromRGB(58, 140, 255), 4)
-	local ring = create("Frame", { Size = UDim2.fromOffset(58, 26), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), Rotation = -28, BackgroundTransparency = 1 }, logoBtn)
-	create("UICorner", { CornerRadius = UDim.new(1, 0) }, ring)
-	stroke(ring, C.White, 4)
-	local dot = create("Frame", { Size = UDim2.fromOffset(20, 20), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundColor3 = C.White, BorderSizePixel = 0 }, logoBtn)
-	create("UICorner", { CornerRadius = UDim.new(1, 0) }, dot)
-	ring.Visible, dot.Visible = false, false
+	local logoStroke = stroke(logoBtn, Color3.fromRGB(58, 140, 255), 4)
 	local miniAv = create("ImageLabel", { Size = UDim2.new(1, -8, 1, -8), Position = UDim2.fromOffset(4, 4), BackgroundTransparency = 1, Image = "" }, logoBtn)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, miniAv)
 	loadAvatar(miniAv)
+	function UI.applyLogo()
+		local s = math.clamp(Config.LogoSize, 36, 160)
+		logoBtn.Size = UDim2.fromOffset(s, s)
+		logoStroke.Thickness = math.max(2, math.floor(s / 24))
+	end
+	UI.applyLogo()
 
 	local function showMain(v)
 		main.Visible = v
@@ -1157,9 +1197,12 @@ do
 		end)
 		table.insert(connections, UserInputService.InputChanged:Connect(function(input)
 			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-				local delta = input.Position - dragStart
-				if delta.Magnitude > 8 then moved = true end
-				if moved then logoBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y) end
+				local raw = input.Position - dragStart
+				if raw.Magnitude > 8 then moved = true end
+				if moved then
+					local delta = raw * (Config.DragSpeed / 100)
+					logoBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+				end
 			end
 		end))
 		table.insert(connections, UserInputService.InputEnded:Connect(function(input)
@@ -1868,11 +1911,15 @@ table.insert(connections, RunService.RenderStepped:Connect(function()
 	end
 end))
 
--- hotkey: toggle the whole ESP
+-- hotkeys: toggle the whole ESP / toggle orbit
 table.insert(connections, UserInputService.InputBegan:Connect(function(input, gp)
-	if gp or Config.ToggleKey == "None" then return end
-	if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode.Name == Config.ToggleKey and UI.setEnabled then
+	if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	local kn = input.KeyCode.Name
+	if Config.ToggleKey ~= "None" and kn == Config.ToggleKey and UI.setEnabled then
 		UI.setEnabled(not Config.Enabled)
+	end
+	if Config.OrbitKey ~= "None" and kn == Config.OrbitKey and UI.setOrbit then
+		UI.setOrbit(not Config.OrbitOn)
 	end
 end))
 
@@ -2459,31 +2506,45 @@ task.spawn(function()
 	end
 end)
 
--- ORBIT (no shake): the position is applied before physics, after physics and right before rendering,
--- velocities are zeroed, the body is put in PlatformStand + no collision, and the camera watches the target.
-Feat.orbit = { angle = 0, target = nil, lastPick = 0, cf = nil, stand = false, lastClip = 0 }
+---------------------------------------------------------------------
+-- HvH: ORBIT (no shake) + SPIN
+-- The position is applied before physics, after physics and right before rendering, velocities are zeroed,
+-- the body is put in PlatformStand + no collision, and the camera watches the target.
+---------------------------------------------------------------------
+Feat.orbit = { angle = 0, target = nil, hum = nil, lastPick = 0, cf = nil, stand = false, lastClip = 0, lastAtk = 0, lastInfo = 0 }
 
+-- finds the best target: Closest or Lowest HP, optional name filter / team check / max distance
 Feat.pickOrbit = function(origin)
 	local want = string.lower(Config.OrbitTarget or "")
-	local best, bestD
+	local lowHp = Config.OrbitTargetMode == "Lowest HP"
+	local best, bestScore, bestHum
 	for _, plr in ipairs(Players:GetPlayers()) do
 		if plr ~= player then
 			local c = plr.Character
 			local r = c and c:FindFirstChild("HumanoidRootPart")
 			local h = c and c:FindFirstChildOfClass("Humanoid")
-			if r and h and h.Health > 0 and (want == "" or string.find(string.lower(plr.Name), want, 1, true)
-				or string.find(string.lower(plr.DisplayName), want, 1, true)) then
+			if r and h and h.Health > 0 then
+				local okName = want == "" or string.find(string.lower(plr.Name), want, 1, true) or string.find(string.lower(plr.DisplayName), want, 1, true)
+				local okTeam = not (Config.OrbitTeamCheck and plr.Team ~= nil and plr.Team == player.Team)
 				local d = (r.Position - origin).Magnitude
-				if not bestD or d < bestD then best, bestD = r, d end
+				if okName and okTeam and d <= Config.OrbitMaxDist then
+					local score = lowHp and h.Health or d
+					if not bestScore or score < bestScore then best, bestScore, bestHum = r, score, h end
+				end
 			end
 		end
 	end
-	return best, bestD
+	return best, bestHum
+end
+
+Feat.orbitInfo = function(text)
+	if UI.orbitInfo then UI.orbitInfo.Text = text end
 end
 
 Feat.orbitStop = function()
 	local o = Feat.orbit
-	o.target, o.cf = nil, nil
+	o.target, o.hum, o.cf = nil, nil, nil
+	Feat.orbitInfo("Orbit off")
 	if o.stand then
 		o.stand = false
 		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
@@ -2510,7 +2571,7 @@ end
 Feat.orbitUpdate = function(dt)
 	local o = Feat.orbit
 	if not Config.OrbitOn or Feat.walking or Config.Fly then
-		if o.cf or o.stand then Feat.orbitStop() end
+		if o.cf or o.stand or o.target then Feat.orbitStop() end
 		return
 	end
 	local char = player.Character
@@ -2521,22 +2582,31 @@ Feat.orbitUpdate = function(dt)
 		return
 	end
 	local now = os.clock()
-	if not (o.target and o.target.Parent) or now - o.lastPick > 0.2 then
+
+	-- target selection: lock keeps one player until they die / leave
+	local valid = o.target and o.target.Parent and o.hum and o.hum.Parent and o.hum.Health > 0
+	if not valid or (not Config.OrbitLock and now - o.lastPick > 0.2) then
 		o.lastPick = now
-		local cand, candD = Feat.pickOrbit(hrp.Position)
+		local cand, candHum = Feat.pickOrbit(hrp.Position)
 		if cand then
-			if not (o.target and o.target.Parent) then
-				o.target = cand
-			elseif cand ~= o.target and candD < (o.target.Position - hrp.Position).Magnitude - 1.5 then
-				o.target = cand -- only switch when the new player is clearly closer
+			if not valid then
+				o.target, o.hum = cand, candHum
+			elseif cand ~= o.target then
+				if Config.OrbitTargetMode == "Lowest HP" or (cand.Position - hrp.Position).Magnitude < (o.target.Position - hrp.Position).Magnitude - 1.5 then
+					o.target, o.hum = cand, candHum
+				end
 			end
-		else
-			o.target = nil
+		elseif not valid then
+			o.target, o.hum = nil, nil
 		end
 	end
 	local t = o.target
 	if not t then
 		o.cf = nil
+		if now - o.lastInfo > 0.3 then
+			o.lastInfo = now
+			Feat.orbitInfo("No target")
+		end
 		return
 	end
 	if not o.stand then
@@ -2549,16 +2619,71 @@ Feat.orbitUpdate = function(dt)
 			if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
 		end
 	end
+
 	o.angle = (o.angle + math.rad(Config.OrbitSpeed) * dt) % (math.pi * 2)
 	local tp = t.Position
-	local pos = tp + Vector3.new(math.cos(o.angle) * Config.OrbitRadius, Config.OrbitHeight, math.sin(o.angle) * Config.OrbitRadius)
-	o.cf = CFrame.lookAt(pos, Vector3.new(tp.X, pos.Y, tp.Z))
+	local R, H = Config.OrbitRadius, Config.OrbitHeight
+	local mode = Config.OrbitMode
+	local pos, up = nil, Vector3.yAxis
+	if mode == "Behind" then
+		local lv = t.CFrame.LookVector
+		local flat = Vector3.new(lv.X, 0, lv.Z)
+		flat = flat.Magnitude > 0.01 and flat.Unit or Vector3.new(0, 0, -1)
+		pos = tp - flat * R + Vector3.new(0, H, 0)
+	elseif mode == "Random" then
+		local a = math.random() * math.pi * 2
+		pos = tp + Vector3.new(math.cos(a) * R, H, math.sin(a) * R)
+	elseif mode == "Vertical" then
+		pos = tp + Vector3.new(math.cos(o.angle) * R, math.sin(o.angle) * R + H, 0)
+		up = Vector3.zAxis
+	else -- Circle
+		pos = tp + Vector3.new(math.cos(o.angle) * R, H, math.sin(o.angle) * R)
+	end
+	if Config.OrbitFace then
+		o.cf = CFrame.lookAt(pos, tp, up)
+	else
+		o.cf = CFrame.lookAt(pos, Vector3.new(tp.X, pos.Y, tp.Z))
+	end
 	Feat.orbitApply()
+
+	-- auto attack with the equipped tool
+	if Config.OrbitAttack and now - o.lastAtk >= 1 / math.max(Config.OrbitAttackCPS, 1) then
+		o.lastAtk = now
+		local tool = char:FindFirstChildOfClass("Tool")
+		if tool then pcall(function() tool:Activate() end) end
+	end
+
+	if now - o.lastInfo > 0.3 then
+		o.lastInfo = now
+		local tname = t.Parent and t.Parent.Name or "?"
+		local hp = o.hum and math.floor(o.hum.Health) or 0
+		local mhp = o.hum and math.floor(o.hum.MaxHealth) or 0
+		Feat.orbitInfo(tname .. " | HP " .. hp .. "/" .. mhp .. " | " .. math.floor((tp - hrp.Position).Magnitude) .. " st")
+	end
 end
 
 table.insert(connections, RunService.Stepped:Connect(function() pcall(Feat.orbitApply) end))
 table.insert(connections, RunService.Heartbeat:Connect(function(dt) pcall(Feat.orbitUpdate, dt) end))
 table.insert(connections, RunService.RenderStepped:Connect(function() pcall(Feat.orbitApply) end))
+
+-- teleport right behind the current / best target
+Feat.tpBehind = function()
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+	local t = Feat.orbit.target
+	if not (t and t.Parent) then t = Feat.pickOrbit(hrp.Position) end
+	if not t then return false end
+	hrp.CFrame = t.CFrame * CFrame.new(0, 0, 4)
+	return true
+end
+
+-- spin in place (anti-aim)
+Feat.spinUpdate = function(dt)
+	if not Config.SpinOn or Config.OrbitOn or Config.Fly or Feat.walking then return end
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if hrp then hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(Config.SpinSpeed) * dt, 0) end
+end
+table.insert(connections, RunService.Heartbeat:Connect(function(dt) pcall(Feat.spinUpdate, dt) end))
 
 -- camera: stable view while orbiting (watch the target) + spectate
 Feat.findPlayer = function(name)
@@ -2694,7 +2819,7 @@ end)
 -- undo everything when the script is unloaded
 Feat.cleanup = function()
 	Feat.stopFly()
-	Config.OrbitOn, Config.SpectateOn = false, false
+	Config.OrbitOn, Config.SpectateOn, Config.SpinOn = false, false, false
 	pcall(Feat.orbitStop)
 	pcall(Feat.camera)
 	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
@@ -2720,6 +2845,8 @@ end
 local function cleanup()
 	if not running then return end
 	running = false
+	-- risky toggles are saved as off
+	Config.OrbitOn, Config.SpinOn, Config.OrbitAttack = false, false, false
 	if Config.AutoSave then saveConfig() end
 	if Feat.cleanup then pcall(Feat.cleanup) end
 	for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
@@ -2736,5 +2863,5 @@ Actions.unload = cleanup
 getgenv().ItemESP_Cleanup = cleanup
 if UI.closeBtn then UI.closeBtn.MouseButton1Click:Connect(cleanup) end
 
-print("CodeBot V1: Item ESP loaded (alerts for: " .. Config.AlertNames .. ")")
+print("CodeBot V1.1: Item ESP loaded (alerts for: " .. Config.AlertNames .. ")")
 notify("Item ESP loaded", "Alerts for: " .. Config.AlertNames, true)
