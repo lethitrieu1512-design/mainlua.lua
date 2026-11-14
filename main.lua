@@ -1,4 +1,4 @@
--- CodeBot V1.5 | Roblox Luau (Delta compatible)
+-- CodeBot V1.6 | Roblox Luau (Delta compatible)
 -- JJS Item ESP  |  Atom-style GUI  |  HvH tab (orbit / spin)  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
 -- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
@@ -82,6 +82,7 @@ local Config = {
 	CFrameSpeed = false, CFrameSpeedVal = 40, Bhop = false, LowGravity = false, GravityVal = 60,
 	FlyKey = "None", NoclipKey = "None", SpeedKey = "None",
 	WP1 = "", WP2 = "", WP3 = "",
+	OrbitWalk = true, OrbitEngage = 10, OrbitWalkSpeed = 60, TargetHUD = true, PGlow = true, InfZoom = false, HideKey = "None",
 
 	-- utility
 	AntiAFK = true, Fullbright = false, FOVOn = false, FOVVal = 90,
@@ -978,6 +979,7 @@ do
 
 		local c = section(p.right, "Hotkey & Script", 2, "◍")
 		addKeybind(c, "ESP Toggle Key", "ToggleKey")
+		addKeybind(c, "Hide / Show GUI Key", "HideKey")
 		addButton(c, "Unload Script", function() Actions.unload() end)
 		finish(c)
 
@@ -1002,6 +1004,7 @@ do
 		local a = section(p.left, "Player ESP", 1, "◉")
 		addCheckbox(a, "Player ESP (Master)", "PlayerESP")
 		addCheckbox(a, "Box Outline", "PBox")
+		addCheckbox(a, "Glow (fill)", "PGlow")
 		addCheckbox(a, "Name", "PName")
 		addCheckbox(a, "Health", "PHealth")
 		addCheckbox(a, "Distance", "PDistance")
@@ -1052,6 +1055,10 @@ do
 		addInput(t, "Target Name (empty = auto)", "OrbitTarget", "player name...")
 		addCheckbox(t, "Lock Target Until Dead", "OrbitLock")
 		addCheckbox(t, "Skip Teammates", "OrbitTeamCheck")
+		addCheckbox(t, "Walk To Next Target", "OrbitWalk")
+		addSlider(t, "Engage Distance (orbit starts at)", "OrbitEngage", 4, 40, " st")
+		addSlider(t, "Walk Speed To Target", "OrbitWalkSpeed", 16, 200, "")
+		addCheckbox(t, "Target HUD (name + health bar)", "TargetHUD")
 		addSlider(t, "Max Target Distance", "OrbitMaxDist", 50, 5000, " st")
 		addButton(t, "Teleport Behind Target", function(btn)
 			flash(btn, Feat.tpBehind() and "Teleported!" or "No target", "Teleport Behind Target")
@@ -1084,6 +1091,7 @@ do
 		local p = newPage("Utility")
 		local a = section(p.left, "Visual Utility", 1, "■")
 		addCheckbox(a, "Fullbright", "Fullbright")
+		addCheckbox(a, "Infinite Zoom Out", "InfZoom")
 		addCheckbox(a, "Custom FOV", "FOVOn")
 		addSlider(a, "FOV", "FOVVal", 30, 200, "")
 		finish(a)
@@ -1100,6 +1108,9 @@ do
 		addButton(b, "Reset Character", function(btn)
 			Feat.reset()
 			flash(btn, "Reset!", "Reset Character")
+		end)
+		addButton(b, "Teleport To Spawn", function(btn)
+			flash(btn, Feat.tpSpawn() and "Teleported!" or "No spawn found", "Teleport To Spawn")
 		end)
 		finish(b)
 
@@ -1384,6 +1395,27 @@ do
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, miniAv)
 	loadAvatar(miniAv)
 	local logoScale = create("UIScale", { Scale = 1 }, logoBtn)
+
+	-- ripple effect: rings expand out of the logo (continuously while minimized, bigger on tap)
+	local function ripple(strong)
+		local s = Config.LogoSize
+		local ring = create("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(s, s), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 0 }, logoBtn)
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }, ring)
+		local st = stroke(ring, Color3.fromRGB(58, 140, 255), math.max(2, math.floor(s / 20)))
+		st.Transparency = strong and 0 or 0.35
+		local goal = s * (strong and 3 or 2.2)
+		local info = TweenInfo.new(strong and 0.8 or 1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		TweenService:Create(ring, info, { Size = UDim2.fromOffset(goal, goal) }):Play()
+		TweenService:Create(st, info, { Transparency = 1 }):Play()
+		task.delay(1.6, function() ring:Destroy() end)
+	end
+	UI.ripple = ripple
+	task.spawn(function()
+		while running do
+			if logoBtn.Visible then ripple(false) end
+			task.wait(1.2)
+		end
+	end)
 	function UI.applyLogo()
 		local s = math.clamp(Config.LogoSize, 36, 160)
 		logoBtn.Size = UDim2.fromOffset(s, s)
@@ -1416,6 +1448,7 @@ do
 	local function logoIn()
 		logoScale.Scale = 0.2
 		logoBtn.Rotation = -180
+		ripple(true)
 		TweenService:Create(logoScale, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 		TweenService:Create(logoBtn, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Rotation = 0 }):Play()
 	end
@@ -1453,6 +1486,7 @@ do
 		logoBtn.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				dragging, moved, dragStart, startPos = true, false, input.Position, logoBtn.Position
+				ripple(true)
 			end
 		end)
 		table.insert(connections, UserInputService.InputChanged:Connect(function(input)
@@ -1591,6 +1625,34 @@ do
 			kids[1]:Destroy()
 			table.remove(kids, 1)
 		end
+	end
+
+	-- target HUD: name + health bar of the orbit target (bottom centre, draggable)
+	local hud = create("Frame", {
+		Name = "TargetHUD", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -40), Size = UDim2.fromOffset(360, 74),
+		BackgroundColor3 = Color3.fromRGB(24, 26, 28), BackgroundTransparency = 0.1, BorderSizePixel = 0, Visible = false, Active = true,
+	}, screenGui)
+	corner(hud, 16)
+	stroke(hud, Color3.fromRGB(32, 72, 72), 2)
+	local hudName = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 28), Position = UDim2.fromOffset(12, 6), Text = "", TextSize = 19, Font = F.Bold, TextColor3 = C.White, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd }, hud)
+	local hudHp = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 28), Position = UDim2.fromOffset(12, 6), Text = "", TextSize = 17, Font = F.Med, TextColor3 = C.SubText, TextXAlignment = Enum.TextXAlignment.Right }, hud)
+	local hudBg = create("Frame", { Size = UDim2.new(1, -24, 0, 14), Position = UDim2.fromOffset(12, 44), BackgroundColor3 = C.ToggleOff, BorderSizePixel = 0 }, hud)
+	create("UICorner", { CornerRadius = UDim.new(1, 0) }, hudBg)
+	local hudFill = create("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, hudBg)
+	create("UICorner", { CornerRadius = UDim.new(1, 0) }, hudFill)
+	makeDraggable(hud, hud, false)
+	function UI.targetHud(name, hp, mhp, kills)
+		if not name or not Config.TargetHUD then
+			hud.Visible = false
+			return
+		end
+		hud.Visible = true
+		hudName.Text = tostring(name) .. "  |  kills " .. tostring(kills or 0)
+		hudHp.Text = "HP " .. math.floor(hp) .. "/" .. math.floor(mhp)
+		local rel = math.clamp(hp / math.max(mhp, 1), 0, 1)
+		TweenService:Create(hudFill, TweenInfo.new(0.15), {
+			Size = UDim2.new(rel, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(math.floor(255 * (1 - rel)), math.floor(70 + 160 * rel), 90),
+		}):Play()
 	end
 
 	function UI.refreshList(entries, total)
@@ -2188,6 +2250,7 @@ table.insert(connections, UserInputService.InputBegan:Connect(function(input, gp
 	if Config.OrbitKey ~= "None" and kn == Config.OrbitKey and UI.setOrbit then
 		UI.setOrbit(not Config.OrbitOn)
 	end
+	if Config.HideKey ~= "None" and kn == Config.HideKey then screenGui.Enabled = not screenGui.Enabled end
 	if Config.FlyKey ~= "None" and kn == Config.FlyKey and UI.setFly then UI.setFly(not Config.Fly) end
 	if Config.NoclipKey ~= "None" and kn == Config.NoclipKey and UI.setNoclip then UI.setNoclip(not Config.Noclip) end
 	if Config.SpeedKey ~= "None" and kn == Config.SpeedKey and UI.setSpeed then UI.setSpeed(not Config.SpeedOn) end
@@ -2310,6 +2373,7 @@ Feat.dropPlayer = function(plr)
 	Feat.pl[plr] = nil
 	pcall(function() ent.box:Destroy() end)
 	pcall(function() ent.bb:Destroy() end)
+	pcall(function() ent.hl:Destroy() end)
 	if ent.line then pcall(function() ent.line:Remove() end) end
 end
 
@@ -2337,6 +2401,12 @@ Feat.makePlayer = function(plr, char)
 	lbl.TextWrapped = true
 	lbl.Parent = bb
 	ent.box, ent.bb, ent.lbl = box, bb, lbl
+	local hl = Instance.new("Highlight")
+	hl.Adornee = char
+	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	hl.FillTransparency = 0.7
+	hl.Parent = espFolder
+	ent.hl = hl
 
 	if Drawing then
 		local okLine, line = pcall(function() return Drawing.new("Line") end)
@@ -2377,6 +2447,9 @@ Feat.updatePlayers = function()
 				ent.box.Visible = Config.PBox
 				ent.box.Color3 = col
 				ent.box.SurfaceColor3 = col
+				ent.hl.Enabled = Config.PGlow
+				ent.hl.FillColor = col
+				ent.hl.OutlineColor = col
 				local parts = {}
 				if Config.PName then
 					parts[#parts + 1] = (plr.DisplayName ~= plr.Name) and (plr.DisplayName .. " (@" .. plr.Name .. ")") or plr.Name
@@ -2441,6 +2514,7 @@ Feat.step = function(dt)
 		pcall(Feat.light)
 		pcall(Feat.hitbox)
 		pcall(Feat.gravity)
+		pcall(Feat.zoom)
 	end
 
 	local char = player.Character
@@ -2862,6 +2936,7 @@ end
 -- The position is applied before physics, after physics and right before rendering, velocities are zeroed,
 -- the body is put in PlatformStand + no collision, and the camera watches the target.
 ---------------------------------------------------------------------
+Feat.kills = 0
 Feat.orbit = { angle = 0, target = nil, hum = nil, lastPick = 0, cf = nil, stand = false, lastClip = 0, lastAtk = 0, lastInfo = 0 }
 
 -- finds the best target: Closest or Lowest HP, optional name filter / team check / max distance
@@ -2896,6 +2971,13 @@ Feat.orbitStop = function()
 	local o = Feat.orbit
 	o.target, o.hum, o.cf = nil, nil, nil
 	if o.hl then pcall(function() o.hl:Destroy() end) o.hl = nil end
+	o.engaged = false
+	if o.oldSpeed then
+		local h0 = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if h0 then pcall(function() h0.WalkSpeed = o.oldSpeed end) end
+		o.oldSpeed = nil
+	end
+	if UI.targetHud then UI.targetHud(nil) end
 	Feat.orbitInfo("Orbit off")
 	if o.stand then
 		o.stand = false
@@ -2937,8 +3019,11 @@ Feat.orbitUpdate = function(dt)
 
 	if o.hum and o.hum.Parent and o.hum.Health <= 0 and o.lastDead ~= o.hum then
 		o.lastDead = o.hum
-		if Config.NotifyKill then notify("Target down", (o.target and o.target.Parent and o.target.Parent.Name or "player") .. " died", true) end
+		Feat.kills = Feat.kills + 1
+		if Config.NotifyKill then notify("Target down", (o.target and o.target.Parent and o.target.Parent.Name or "player") .. (Config.OrbitWalk and " died - walking to the next target" or " died"), true) end
 	end
+
+	local prevT = o.target
 
 	-- target selection: lock keeps one player until they die / leave
 	local valid = o.target and o.target.Parent and o.hum and o.hum.Parent and o.hum.Health > 0
@@ -2957,23 +3042,26 @@ Feat.orbitUpdate = function(dt)
 			o.target, o.hum = nil, nil
 		end
 	end
+	if o.target ~= prevT then o.engaged = false end
 	local t = o.target
 	if not t then
 		o.cf = nil
 		if now - o.lastInfo > 0.3 then
 			o.lastInfo = now
 			Feat.orbitInfo("No target")
+			if UI.targetHud then UI.targetHud(nil) end
 		end
 		return
 	end
-	-- too far: try one teleport; if the game reverts it, walk to the target first, then orbit
+	-- approach: WALK to the target first; the orbit starts once we are within the engage distance (about 10 studs)
 	local far = (t.Position - hrp.Position).Magnitude
-	if far > Config.OrbitRadius + 40 then
-		if now - (o.lastTP or 0) > 5 then
-			o.lastTP = now
-			hrp.CFrame = CFrame.new(t.Position + Vector3.new(Config.OrbitRadius, Config.OrbitHeight + 2, 0))
-			return
-		end
+	local engage = Config.OrbitEngage
+	if o.engaged then
+		if far > math.max(engage, Config.OrbitRadius) + 30 then o.engaged = false end
+	elseif far <= engage then
+		o.engaged = true
+	end
+	if not o.engaged then
 		o.cf = nil
 		if o.stand then
 			o.stand = false
@@ -2982,16 +3070,31 @@ Feat.orbitUpdate = function(dt)
 				hum:ChangeState(Enum.HumanoidStateType.GettingUp)
 			end)
 		end
-		if now - (o.lastWalk or 0) > 0.25 then
+		if not Config.OrbitWalk and now - (o.lastTP or 0) > 5 then
+			o.lastTP = now -- walking is off: try a teleport instead
+			hrp.CFrame = CFrame.new(t.Position + Vector3.new(engage * 0.5, Config.OrbitHeight + 2, 0))
+			return
+		end
+		if not Config.SpeedOn then
+			if not o.oldSpeed then o.oldSpeed = hum.WalkSpeed end
+			hum.WalkSpeed = Config.OrbitWalkSpeed
+		end
+		if now - (o.lastWalk or 0) > 0.2 then
 			o.lastWalk = now
 			hum:MoveTo(t.Position)
 			if hrp.AssemblyLinearVelocity.Magnitude < 2 then hum.Jump = true end
 		end
 		if now - o.lastInfo > 0.3 then
 			o.lastInfo = now
-			Feat.orbitInfo("Walking to target... " .. math.floor(far) .. " st")
+			local tn = t.Parent and t.Parent.Name or "?"
+			Feat.orbitInfo("Walking to " .. tn .. "... " .. math.floor(far) .. " st")
+			if UI.targetHud then UI.targetHud(tn, o.hum and o.hum.Health or 0, o.hum and o.hum.MaxHealth or 100, Feat.kills) end
 		end
 		return
+	end
+	if o.oldSpeed then
+		pcall(function() hum.WalkSpeed = o.oldSpeed end)
+		o.oldSpeed = nil
 	end
 
 	if not o.stand then
@@ -3058,6 +3161,7 @@ Feat.orbitUpdate = function(dt)
 		local hp = o.hum and math.floor(o.hum.Health) or 0
 		local mhp = o.hum and math.floor(o.hum.MaxHealth) or 0
 		Feat.orbitInfo(tname .. " | HP " .. hp .. "/" .. mhp .. " | " .. math.floor((tp - hrp.Position).Magnitude) .. " st")
+		if UI.targetHud then UI.targetHud(tname, hp, mhp, Feat.kills) end
 	end
 end
 
@@ -3346,6 +3450,25 @@ Feat.gravity = function()
 	end
 end
 
+-- infinite zoom out + teleport to spawn
+Feat.zoom = function()
+	if Config.InfZoom then
+		if not Feat.orig.zoom then Feat.orig.zoom = player.CameraMaxZoomDistance end
+		player.CameraMaxZoomDistance = 100000
+	elseif Feat.orig.zoom then
+		player.CameraMaxZoomDistance = Feat.orig.zoom
+		Feat.orig.zoom = nil
+	end
+end
+
+Feat.tpSpawn = function()
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	local sp = Workspace:FindFirstChildWhichIsA("SpawnLocation", true)
+	if not (hrp and sp) then return false end
+	hrp.CFrame = sp.CFrame + Vector3.new(0, 5, 0)
+	return true
+end
+
 -- waypoints (stored in the config as "x,y,z" so they are saved too)
 Feat.saveWP = function(i)
 	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
@@ -3413,8 +3536,9 @@ Feat.cleanup = function()
 	Feat.restorePrompts()
 	Config.HitboxOn = false
 	pcall(Feat.hitboxRestore)
-	Config.LowGravity, Config.AimOn, Config.AuraOn = false, false, false
+	Config.LowGravity, Config.AimOn, Config.AuraOn, Config.InfZoom = false, false, false, false
 	pcall(Feat.gravity)
+	pcall(Feat.zoom)
 	if Feat.fovCircle then pcall(function() Feat.fovCircle:Remove() end) Feat.fovCircle = nil end
 	for plr in pairs(Feat.pl) do Feat.dropPlayer(plr) end
 end
