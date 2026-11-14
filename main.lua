@@ -1,4 +1,4 @@
--- CodeBot V1.6 | Roblox Luau (Delta compatible)
+-- CodeBot V1.7 | Roblox Luau (Delta compatible)
 -- JJS Item ESP  |  Atom-style GUI  |  HvH tab (orbit / spin)  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
 -- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
@@ -50,7 +50,7 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 65, LogoSize = 64, ClickSound = true, ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
+	DragSpeed = 65, LogoSize = 64, ClickSound = true, RippleOn = true, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
 	-- notifications (Roblox's own notification popup)
 	StatusNotify = true, NotifyDuration = 6, NotifyStyle = "Hub",
@@ -313,6 +313,45 @@ do
 	table.insert(connections, screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateScale))
 
 	-- generic drag helper: moves `target`; scaled = divide by the window UIScale. Drag speed = Config.DragSpeed / 100
+	-- ripple effect: the whole window ripples where you tap, and every button / card / tab gets its own ripple
+	local mainRipple = create("CanvasGroup", { Name = "MainRipple", Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, ZIndex = 0, Active = false }, main)
+	create("UICorner", { CornerRadius = UDim.new(0, 30) }, mainRipple)
+	local function spawnRipple(holder, target, x, y, alpha, spread)
+		if not Config.RippleOn then return end
+		pcall(function()
+			local ap, as = target.AbsolutePosition, target.AbsoluteSize
+			local sc = math.max(uiScale.Scale, 0.01)
+			local lx = math.clamp((x - ap.X) / sc, 0, as.X / sc)
+			local ly = math.clamp((y - ap.Y) / sc, 0, as.Y / sc)
+			local maxd = math.max(as.X, as.Y) / sc * (spread or 2.3)
+			local c = create("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(lx, ly), Size = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Accent, BackgroundTransparency = alpha, BorderSizePixel = 0 }, holder)
+			create("UICorner", { CornerRadius = UDim.new(1, 0) }, c)
+			local info = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+			TweenService:Create(c, info, { Size = UDim2.fromOffset(maxd, maxd), BackgroundTransparency = 1 }):Play()
+			task.delay(0.65, function() c:Destroy() end)
+		end)
+	end
+	local function addRipple(target, trigger, radius)
+		trigger.MouseButton1Down:Connect(function(x, y)
+			local holder = target:FindFirstChild("RippleHolder")
+			if not holder then
+				holder = create("CanvasGroup", { Name = "RippleHolder", Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, ZIndex = 50, Active = false }, target)
+				local cr = target:FindFirstChildOfClass("UICorner")
+				create("UICorner", { CornerRadius = cr and cr.CornerRadius or UDim.new(0, radius or 22) }, holder)
+			end
+			spawnRipple(holder, target, x, y, 0.72)
+		end)
+	end
+	table.insert(connections, UserInputService.InputBegan:Connect(function(input)
+		if not main.Visible then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		local ap, as = main.AbsolutePosition, main.AbsoluteSize
+		local x, y = input.Position.X, input.Position.Y
+		if x >= ap.X and x <= ap.X + as.X and y >= ap.Y and y <= ap.Y + as.Y then
+			spawnRipple(mainRipple, main, x, y, 0.86, 1.3)
+		end
+	end))
+
 	local function makeDraggable(handle, target, scaled)
 		local dragging, dragStart, startPos = false, nil, nil
 		handle.InputBegan:Connect(function(input)
@@ -385,6 +424,10 @@ do
 		end
 	end
 	UI.closeBtn = closeBtn
+	addRipple(searchBtn, searchBtn, 35)
+	addRipple(minBtn, minBtn, 35)
+	addRipple(maxBtn, maxBtn, 35)
+	addRipple(closeBtn, closeBtn, 35)
 	UI.scaleMul = 1
 	maxBtn.MouseButton1Click:Connect(function()
 		UI.click()
@@ -427,6 +470,7 @@ do
 		Text = "♥", TextSize = 38, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = false,
 	}, sidebar)
 	corner(heartBtn, 22)
+	addRipple(heartBtn, heartBtn, 22)
 	heartBtn.MouseButton1Click:Connect(function()
 		UI.click()
 		if UI.openPage then UI.openPage("Settings") end
@@ -470,6 +514,7 @@ do
 		local l2 = create("Frame", { Size = UDim2.fromOffset(110, 3), BackgroundColor3 = C.Accent, BorderSizePixel = 0, LayoutOrder = 3 }, mid)
 		create("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) }) }, l2)
 		local chev = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(44, 44), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -150, 0.5, 0), Text = "v", TextSize = 26, Font = F.Bold, TextColor3 = C.BarLight }, hdr)
+		addRipple(hdr, hdr, 18)
 		hdr.MouseButton1Click:Connect(function()
 			UI.click()
 			obj.collapsed = not obj.collapsed
@@ -517,6 +562,7 @@ do
 			BackgroundColor3 = Config[key] and C.Accent or C.ToggleOff, BorderSizePixel = 0, Text = "", AutoButtonColor = false,
 		}, r)
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
+		addRipple(r, track)
 		local knob = create("Frame", { Size = UDim2.fromOffset(42, 42), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, Config[key] and 52 or 6, 0.5, 0), BackgroundColor3 = C.White, BorderSizePixel = 0 }, track)
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }, knob)
 		local function apply(v)
@@ -588,6 +634,7 @@ do
 		rowLabel(r, name, 56).Size = UDim2.new(1, -400, 0, 44)
 		local box = create("TextButton", { Size = UDim2.new(0, 250, 0, 68), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -40, 0.5, 0), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = "", AutoButtonColor = true }, r)
 		corner(box, 18)
+		addRipple(box, box, 18)
 		local swatch = create("Frame", { Size = UDim2.new(0, 38, 0, 38), Position = UDim2.new(0, 18, 0.5, -19), BackgroundColor3 = Config[key], BorderSizePixel = 0 }, box)
 		corner(swatch, 10)
 		local hex = create("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1, -74, 1, 0), Position = UDim2.new(0, 70, 0, 0), Text = hexOf(Config[key]), TextSize = 24, Font = F.Reg, TextColor3 = C.SubText, TextXAlignment = Enum.TextXAlignment.Left }, box)
@@ -635,6 +682,7 @@ do
 		rowLabel(r, name, 46)
 		local box = create("TextButton", { Size = UDim2.new(1, -112, 0, 70), Position = UDim2.new(0, 72, 0, 84), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = "", AutoButtonColor = false }, r)
 		corner(box, 18)
+		addRipple(box, box, 18)
 		local cur = txt(box, Config[key], 27, C.White, F.Reg)
 		cur.Position = UDim2.new(0, 26, 0.5, 0)
 		cur.Size = UDim2.new(1, -90, 0, 34)
@@ -680,6 +728,7 @@ do
 			BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = Config[key], TextSize = 26, Font = F.Med, TextColor3 = C.White, AutoButtonColor = true,
 		}, r)
 		corner(btn, 18)
+		addRipple(btn, btn, 18)
 		local waiting = false
 		table.insert(syncers, function() btn.Text = Config[key] end)
 		btn.MouseButton1Click:Connect(function()
@@ -706,6 +755,7 @@ do
 		local btn = create("TextButton", {
 			Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = text, TextSize = 34, Font = F.Med, TextColor3 = C.White, AutoButtonColor = false,
 		}, r)
+		addRipple(r, btn)
 		btn.MouseEnter:Connect(function() TweenService:Create(r, TweenInfo.new(0.12), { BackgroundColor3 = C.Selected }):Play() end)
 		btn.MouseLeave:Connect(function() TweenService:Create(r, TweenInfo.new(0.15), { BackgroundColor3 = C.Panel }):Play() end)
 		btn.MouseButton1Click:Connect(function()
@@ -994,6 +1044,7 @@ do
 		addSlider(w, "Drag Speed (65% = 0.65)", "DragSpeed", 20, 150, "%")
 		addSlider(w, "Minimized Logo Size", "LogoSize", 36, 160, " px", function() if UI.applyLogo then UI.applyLogo() end end)
 		addCheckbox(w, "Click Sound", "ClickSound")
+		addCheckbox(w, "Ripple Effect", "RippleOn")
 		addDropdown(w, "Click Sound Type", "ClickSoundType", { "Click", "Snap", "Switch" }, function() UI.click() end)
 		addSlider(w, "Click Volume", "ClickVolume", 1, 10, "")
 		finish(w)
@@ -1299,6 +1350,28 @@ do
 		finish(c)
 	end, tabFail("Help"))
 
+	xpcall(function() -- Tools
+		local p = newPage("Tools")
+		local a = section(p.left, "Waypoints", 1, "◆")
+		addDropdown(a, "Slot", "WPSlot", { "1", "2", "3", "4", "5" }, function() Feat.wpInfo() end)
+		UI.wpInfo = addInfo(a, "Slot 1: empty", "Saved Position")
+		addButton(a, "Save Current Position", function(btn)
+			flash(btn, Feat.wpSave() and "Saved!" or "No character", "Save Current Position")
+		end)
+		addButton(a, "Teleport To Slot", function(btn)
+			flash(btn, Feat.wpGo() and "Teleported!" or "Slot empty", "Teleport To Slot")
+		end)
+		finish(a)
+		local b = section(p.left, "Auto", 2, "◆")
+		addCheckbox(b, "Death Return (respawn where you died)", "DeathReturn")
+		addCheckbox(b, "Player Join / Leave Alerts", "JoinAlerts")
+		addCheckbox(b, "FPS Boost", "FPSBoost", function(v) Feat.fps(v) end)
+		finish(b)
+		local c = section(p.left, "Menu", 3, "◆")
+		addKeybind(c, "Show / Hide Menu Key", "MenuKey")
+		finish(c)
+	end, tabFail("Tools"))
+
 	-- sidebar entries (categories) + pill tabs (pages), like the reference ---
 	local catBtns, pillBtns, catPages, pageCat, lastPage = {}, {}, {}, {}, {}
 	local function selectPage(name)
@@ -1352,6 +1425,7 @@ do
 		st.Position = UDim2.new(0, 104, 0.5, 0)
 		st.Size = UDim2.new(1, -120, 0, 46)
 		catBtns[title] = { btn = btn, marker = marker, text = st, icon = ic }
+		addRipple(btn, btn, 24)
 		btn.MouseButton1Click:Connect(function()
 			UI.click()
 			selectPage(lastPage[title] or subs[1][1])
@@ -1367,6 +1441,7 @@ do
 			corner(pb, 24)
 			create("UIPadding", { PaddingLeft = UDim.new(0, 32), PaddingRight = UDim.new(0, 32) }, pb)
 			pillBtns[name] = { btn = pb }
+			addRipple(pb, pb, 24)
 			pb.MouseButton1Click:Connect(function()
 				UI.click()
 				selectPage(name)
@@ -1378,7 +1453,7 @@ do
 	addCategory("Visuals", { { "Item ESP", "◎" }, { "Player ESP", "◉" } })
 	addCategory("Alerts", { { "Alerts", "▲" } })
 	addCategory("Items", { { "Item List", "◈" }, { "Pickup", "◆" } })
-	addCategory("Player", { { "Movement", "▶" }, { "Players", "◉" }, { "Utility", "■" } })
+	addCategory("Player", { { "Movement", "▶" }, { "Players", "◉" }, { "Utility", "■" }, { "Tools", "◆" } })
 	addCategory("HvH", { { "HvH", "◆" }, { "Combat", "▶" } })
 	addCategory("Settings", { { "Colors", "◐" }, { "Settings", "◍" } })
 	selectPage("Status")
@@ -1509,6 +1584,7 @@ do
 			end
 		end))
 	end
+	UI.showMain = showMain
 	minBtn.MouseButton1Click:Connect(function()
 		UI.click()
 		showMain(false)
@@ -3514,8 +3590,132 @@ Feat.refreshPlayers = function()
 	if UI.plCount then UI.plCount.Text = "Players: " .. #arr .. " (showing " .. math.min(#arr, #UI.plRows) .. ")" end
 end
 
+-- TOOLS: waypoints, death return, join/leave alerts, FPS boost, menu key
+Feat.wp = {}
+Feat.wpInfo = function()
+	if not UI.wpInfo then return end
+	local cf = Feat.wp[tonumber(Config.WPSlot) or 1]
+	if cf then
+		local p = cf.Position
+		UI.wpInfo.Text = string.format("Slot %s: %d, %d, %d", Config.WPSlot, p.X, p.Y, p.Z)
+	else
+		UI.wpInfo.Text = "Slot " .. tostring(Config.WPSlot) .. ": empty"
+	end
+end
+Feat.wpSave = function()
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+	Feat.wp[tonumber(Config.WPSlot) or 1] = hrp.CFrame
+	Feat.wpInfo()
+	notify("Waypoint", "Saved to slot " .. tostring(Config.WPSlot), true)
+	return true
+end
+Feat.wpGo = function()
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	local cf = Feat.wp[tonumber(Config.WPSlot) or 1]
+	if hrp and cf then
+		hrp.CFrame = cf * CFrame.new(0, 3, 0)
+		return true
+	end
+	return false
+end
+
+-- death return: remember the last safe spot, go back there after respawning
+Feat.lastAlive = nil
+task.spawn(function()
+	while running do
+		local char = player.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hrp and hum and hum.Health > 0 and hrp.Position.Y > (Config.VoidY or -500) then Feat.lastAlive = hrp.CFrame end
+		task.wait(0.25)
+	end
+end)
+table.insert(connections, player.CharacterAdded:Connect(function(char)
+	if not Config.DeathReturn or not Feat.lastAlive then return end
+	local hrp = char:WaitForChild("HumanoidRootPart", 10)
+	if not hrp then return end
+	task.wait(0.6)
+	if running and Config.DeathReturn and hrp.Parent and Feat.lastAlive then
+		hrp.CFrame = Feat.lastAlive
+		notify("Death Return", "Teleported back to where you died", true)
+	end
+end))
+
+-- join / leave alerts
+table.insert(connections, Players.PlayerAdded:Connect(function(plr)
+	if Config.JoinAlerts then notify("Player joined", plr.DisplayName .. " (@" .. plr.Name .. ")", true) end
+end))
+table.insert(connections, Players.PlayerRemoving:Connect(function(plr)
+	if Config.JoinAlerts and plr ~= player then notify("Player left", plr.DisplayName .. " (@" .. plr.Name .. ")", true) end
+end))
+
+-- FPS boost: no shadows, lowest quality, effects/particles off (everything is restored when switched off)
+Feat.fpsOff = {}
+Feat.fpsHeavy = function(o)
+	return o:IsA("ParticleEmitter") or o:IsA("Trail") or o:IsA("Smoke") or o:IsA("Fire") or o:IsA("Sparkles") or o:IsA("Beam")
+end
+Feat.fpsRestore = function()
+	for _, o in ipairs(Feat.fpsOff) do pcall(function() o.Enabled = true end) end
+	Feat.fpsOff = {}
+	if Feat.fpsPrev then
+		pcall(function() Feat.Lighting.GlobalShadows = Feat.fpsPrev.shadows end)
+		pcall(function() if Feat.fpsPrev.quality then settings().Rendering.QualityLevel = Feat.fpsPrev.quality end end)
+		Feat.fpsPrev = nil
+	end
+end
+Feat.fps = function(on)
+	if not on then
+		Feat.fpsRestore()
+		return
+	end
+	task.spawn(function()
+		local L = Feat.Lighting
+		if not Feat.fpsPrev then
+			Feat.fpsPrev = { shadows = L.GlobalShadows }
+			pcall(function() Feat.fpsPrev.quality = settings().Rendering.QualityLevel end)
+		end
+		L.GlobalShadows = false
+		pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+		for _, o in ipairs(L:GetChildren()) do
+			if o:IsA("PostEffect") and o.Enabled then
+				o.Enabled = false
+				Feat.fpsOff[#Feat.fpsOff + 1] = o
+			end
+		end
+		local list = Workspace:GetDescendants()
+		for i, o in ipairs(list) do
+			if not (running and Config.FPSBoost) then return end
+			if Feat.fpsHeavy(o) and o.Enabled then
+				o.Enabled = false
+				Feat.fpsOff[#Feat.fpsOff + 1] = o
+			end
+			if i % 2000 == 0 then task.wait() end
+		end
+		notify("FPS Boost", "Effects and shadows disabled", true)
+	end)
+end
+table.insert(connections, Workspace.DescendantAdded:Connect(function(o)
+	if Config.FPSBoost and Feat.fpsHeavy(o) then
+		task.defer(function()
+			pcall(function()
+				o.Enabled = false
+				Feat.fpsOff[#Feat.fpsOff + 1] = o
+			end)
+		end)
+	end
+end))
+if Config.FPSBoost then Feat.fps(true) end
+
+-- menu key: show / hide the window
+table.insert(connections, UserInputService.InputBegan:Connect(function(input, gp)
+	if gp or Config.MenuKey == "None" or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	if input.KeyCode.Name == Config.MenuKey and UI.showMain and UI.main then UI.showMain(not UI.main.Visible) end
+end))
+
 -- undo everything when the script is unloaded
 Feat.cleanup = function()
+	pcall(Feat.fpsRestore)
 	Feat.stopFly()
 	Config.OrbitOn, Config.SpectateOn, Config.SpinOn = false, false, false
 	pcall(Feat.orbitStop)
