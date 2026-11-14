@@ -1,4 +1,4 @@
-l-- CodeBot V1.2 | Roblox Luau (Delta compatible)
+-- CodeBot V1.3 | Roblox Luau (Delta compatible)
 -- JJS Item ESP  |  Atom-style GUI  |  HvH tab (orbit / spin)  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
 -- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
@@ -75,7 +75,7 @@ local Config = {
 	OrbitMode = "Circle", OrbitTargetMode = "Closest", OrbitLock = true, OrbitFace = true, OrbitTeamCheck = true,
 	OrbitMaxDist = 1000, OrbitKey = "None", OrbitAttack = false, OrbitAttackCPS = 12,
 	SpinOn = false, SpinSpeed = 1500,
-	TargetHL = true, NotifyKill = true, HitboxOn = false, HitboxSize = 10, VoidSafe = true, VoidY = -150,
+	TargetHL = true, NotifyKill = true, HitboxOn = false, HitboxSize = 10, VoidSafe = true, VoidY = -500,
 
 	-- utility
 	AntiAFK = true, Fullbright = false, FOVOn = false, FOVVal = 90,
@@ -267,7 +267,7 @@ do
 	local old = guiParent:FindFirstChild("ItemESP_Gui")
 	if old then old:Destroy() end
 
-	screenGui = create("ScreenGui", { Name = "ItemESP_Gui", ResetOnSpawn = false, IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, guiParent)
+	screenGui = create("ScreenGui", { Name = "ItemESP_Gui", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 999, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, guiParent)
 
 	local main = create("Frame", {
 		Name = "Main", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
@@ -2021,6 +2021,19 @@ Feat.orig = {}        -- values to restore when a feature is switched off
 Feat.collected = 0
 Feat.acc = 0
 Feat.Lighting = game:GetService("Lighting")
+Feat.errd = {}
+
+-- runs a function safely; the first error of each kind is shown as a notification + printed (so bugs are visible)
+local function guard(name, fn)
+	return function(...)
+		local ok, err = pcall(fn, ...)
+		if not ok and not Feat.errd[name] then
+			Feat.errd[name] = true
+			warn("CodeBot error [" .. name .. "]: " .. tostring(err))
+			pcall(notify, "Script error: " .. name, string.sub(tostring(err), 1, 90), true)
+		end
+	end
+end
 
 Feat.restorePrompts = function()
 	for _, e in pairs(tracked) do
@@ -2293,7 +2306,7 @@ Feat.render = function()
 		end
 	end
 end
-table.insert(connections, RunService.RenderStepped:Connect(function() pcall(Feat.render) end))
+table.insert(connections, RunService.RenderStepped:Connect(guard("render", Feat.render)))
 
 -- noclip
 table.insert(connections, RunService.Stepped:Connect(function()
@@ -2681,6 +2694,34 @@ Feat.orbitUpdate = function(dt)
 		end
 		return
 	end
+	-- too far: try one teleport; if the game reverts it, walk to the target first, then orbit
+	local far = (t.Position - hrp.Position).Magnitude
+	if far > Config.OrbitRadius + 40 then
+		if now - (o.lastTP or 0) > 5 then
+			o.lastTP = now
+			hrp.CFrame = CFrame.new(t.Position + Vector3.new(Config.OrbitRadius, Config.OrbitHeight + 2, 0))
+			return
+		end
+		o.cf = nil
+		if o.stand then
+			o.stand = false
+			pcall(function()
+				hum.PlatformStand = false
+				hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+			end)
+		end
+		if now - (o.lastWalk or 0) > 0.25 then
+			o.lastWalk = now
+			hum:MoveTo(t.Position)
+			if hrp.AssemblyLinearVelocity.Magnitude < 2 then hum.Jump = true end
+		end
+		if now - o.lastInfo > 0.3 then
+			o.lastInfo = now
+			Feat.orbitInfo("Walking to target... " .. math.floor(far) .. " st")
+		end
+		return
+	end
+
 	if not o.stand then
 		o.stand = true
 		hum.PlatformStand = true
@@ -2748,9 +2789,9 @@ Feat.orbitUpdate = function(dt)
 	end
 end
 
-table.insert(connections, RunService.Stepped:Connect(function() pcall(Feat.orbitApply) end))
-table.insert(connections, RunService.Heartbeat:Connect(function(dt) pcall(Feat.orbitUpdate, dt) end))
-table.insert(connections, RunService.RenderStepped:Connect(function() pcall(Feat.orbitApply) end))
+table.insert(connections, RunService.Stepped:Connect(guard("orbit-apply", Feat.orbitApply)))
+table.insert(connections, RunService.Heartbeat:Connect(guard("orbit", Feat.orbitUpdate)))
+table.insert(connections, RunService.RenderStepped:Connect(guard("orbit-apply", Feat.orbitApply)))
 
 -- teleport right behind the current / best target
 Feat.tpBehind = function()
@@ -2769,7 +2810,7 @@ Feat.spinUpdate = function(dt)
 	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 	if hrp then hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(Config.SpinSpeed) * dt, 0) end
 end
-table.insert(connections, RunService.Heartbeat:Connect(function(dt) pcall(Feat.spinUpdate, dt) end))
+table.insert(connections, RunService.Heartbeat:Connect(guard("spin", Feat.spinUpdate)))
 
 -- camera: stable view while orbiting (watch the target) + spectate
 Feat.findPlayer = function(name)
@@ -2807,7 +2848,7 @@ Feat.camera = function()
 		if h then cam.CameraSubject = h end
 	end
 end
-table.insert(connections, RunService.RenderStepped:Connect(function() pcall(Feat.camera) end))
+table.insert(connections, RunService.RenderStepped:Connect(guard("camera", Feat.camera)))
 
 -- teleport helpers
 Feat.tpPlayer = function(name)
