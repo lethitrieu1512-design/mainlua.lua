@@ -1,4 +1,4 @@
--- CodeBot V1.7 | Roblox Luau (Delta compatible)
+-- CodeBot V1.8 | Roblox Luau (Delta compatible)
 -- JJS Item ESP  |  Atom-style GUI  |  HvH tab (orbit / spin)  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
 -- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
@@ -50,7 +50,8 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 65, LogoSize = 64, ClickSound = true, RippleOn = true, BypassEnabled = false, BypassSpot = "Sky Platform", BypassMax = 12, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
+	DragSpeed = 65, LogoSize = 64, ClickSound = true, RippleOn = true, Whitelist = "", WhitelistFriends = true, Crosshair = false, CrossSize = 12, CrossGap = 4, ColorCross = Color3.fromRGB(0, 226, 212), TimeOn = false, TimeVal = 14, Profile = "1",
+	BypassEnabled = false, BypassSpot = "Sky Platform", BypassMax = 12, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
 	-- notifications (Roblox's own notification popup)
 	StatusNotify = true, NotifyDuration = 6, NotifyStyle = "Hub",
@@ -105,7 +106,7 @@ for k, v in pairs(Config) do DEFAULTS[k] = v end
 
 local FILE = "CodeBot_ItemESP.json"
 
-local function saveConfig()
+local function saveConfig(file)
 	if not writefile then return false end
 	local data = {}
 	for k, v in pairs(Config) do
@@ -116,14 +117,14 @@ local function saveConfig()
 			data[k] = v
 		end
 	end
-	local ok = pcall(function() writefile(FILE, HttpService:JSONEncode(data)) end)
+	local ok = pcall(function() writefile(file or FILE, HttpService:JSONEncode(data)) end)
 	return ok
 end
 
-local function loadConfig()
+local function loadConfig(file)
 	if not (readfile and isfile) then return false end
 	local ok, raw = pcall(function()
-		if isfile(FILE) then return readfile(FILE) end
+		if isfile(file or FILE) then return readfile(file or FILE) end
 		return nil
 	end)
 	if not ok or not raw then return false end
@@ -822,6 +823,7 @@ do
 		UI.srvStatus = addInfo(a, "Fps - | Ping - | Executor", "Status Script")
 		UI.homeItems = addInfo(a, "Tracked 0 | Alerts 0 | Picked 0", "Item Scanner")
 		UI.srvPlayers = addInfo(a, "Players: -", "Server")
+		UI.sessInfo = addInfo(a, "Kills 0 | Deaths 0 | 0:00:00", "Session")
 		finish(a)
 
 		UI.stats = { ["Items Tracked"] = { Text = "0" }, ["Alert Items"] = { Text = "0" }, ["FPS"] = { Text = "-" }, ["Ping"] = { Text = "-" } }
@@ -1037,6 +1039,20 @@ do
 			UI.configInfo.Text = "Reset to default"
 		end)
 		addCheckbox(a, "Auto Save When Closing", "AutoSave")
+		addDropdown(a, "Profile Slot", "Profile", { "1", "2", "3" })
+		addButton(a, "Save To Profile Slot", function(btn)
+			local ok = saveConfig("CodeBot_ItemESP_P" .. Config.Profile .. ".json")
+			flash(btn, ok and "Saved!" or "Save failed", "Save To Profile Slot")
+		end)
+		addButton(a, "Load From Profile Slot", function(btn)
+			if loadConfig("CodeBot_ItemESP_P" .. Config.Profile .. ".json") then
+				UI.sync()
+				Actions.reapply()
+				flash(btn, "Loaded!", "Load From Profile Slot")
+			else
+				flash(btn, "Slot empty", "Load From Profile Slot")
+			end
+		end)
 		finish(a)
 
 		local b = section(p.right, "Detection", 1, "◍")
@@ -1130,6 +1146,16 @@ do
 		addInput(t, "Target Name (empty = auto)", "OrbitTarget", "player name...")
 		addCheckbox(t, "Lock Target Until Dead", "OrbitLock")
 		addCheckbox(t, "Skip Teammates", "OrbitTeamCheck")
+		addCheckbox(t, "Skip Roblox Friends", "WhitelistFriends")
+		addInput(t, "Whitelist (never target)", "Whitelist", "names, comma separated...")
+		addButton(t, "Next Target (cycle)", function(btn)
+			flash(btn, Feat.nextTarget() and "Switched!" or "No target", "Next Target (cycle)")
+		end)
+		addButton(t, "Clear Target (use closest)", function(btn)
+			Config.OrbitTarget = ""
+			UI.sync()
+			flash(btn, "Cleared!", "Clear Target (use closest)")
+		end)
 		addCheckbox(t, "Walk To Next Target", "OrbitWalk")
 		addSlider(t, "Engage Distance (orbit starts at)", "OrbitEngage", 4, 40, " st")
 		addSlider(t, "Walk Speed To Target", "OrbitWalkSpeed", 16, 200, "")
@@ -1170,6 +1196,12 @@ do
 		addCheckbox(a, "Infinite Zoom Out", "InfZoom")
 		addCheckbox(a, "Custom FOV", "FOVOn")
 		addSlider(a, "FOV", "FOVVal", 30, 200, "")
+		addCheckbox(a, "Custom Time Of Day", "TimeOn")
+		addSlider(a, "Time (hour)", "TimeVal", 0, 24, "h")
+		addCheckbox(a, "Crosshair (needs Drawing)", "Crosshair")
+		addSlider(a, "Crosshair Size", "CrossSize", 4, 40, "")
+		addSlider(a, "Crosshair Gap", "CrossGap", 0, 20, "")
+		addColor(a, "Crosshair Color", "ColorCross")
 		finish(a)
 		local b = section(p.right, "Server & Character", 1, "■")
 		addCheckbox(b, "Anti AFK", "AntiAFK")
@@ -1392,7 +1424,7 @@ do
 			end)
 		end)
 		finish(z)
-		local a = section(p.left, "Waypoints", 1, "◆")
+		local a = section(p.left, "Waypoint Slots", 1, "◆")
 		addDropdown(a, "Slot", "WPSlot", { "1", "2", "3", "4", "5" }, function() Feat.wpInfo() end)
 		UI.wpInfo = addInfo(a, "Slot 1: empty", "Saved Position")
 		addButton(a, "Save Current Position", function(btn)
@@ -2601,7 +2633,7 @@ Feat.light = function()
 			}
 		end
 		L.Brightness = 2
-		L.ClockTime = 14
+		L.ClockTime = Config.TimeOn and Config.TimeVal or 14
 		L.FogEnd = 100000
 		L.GlobalShadows = false
 		L.Ambient = Color3.fromRGB(178, 178, 178)
@@ -3069,7 +3101,7 @@ Feat.pickOrbit = function(origin)
 			local h = c and c:FindFirstChildOfClass("Humanoid")
 			if r and h and h.Health > 0 then
 				local okName = want == "" or string.find(string.lower(plr.Name), want, 1, true) or string.find(string.lower(plr.DisplayName), want, 1, true)
-				local okTeam = not (Config.OrbitTeamCheck and plr.Team ~= nil and plr.Team == player.Team)
+				local okTeam = not (Config.OrbitTeamCheck and plr.Team ~= nil and plr.Team == player.Team) and not Feat.isSafe(plr)
 				local d = (r.Position - origin).Magnitude
 				if okName and okTeam and d <= Config.OrbitMaxDist then
 					local score = lowHp and h.Health or d
@@ -3446,7 +3478,7 @@ Feat.nearestEnemy = function(maxD, teamCheck)
 	if not hrp then return nil end
 	local best, bestD, bestHum
 	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= player and not (teamCheck and plr.Team ~= nil and plr.Team == player.Team) then
+		if plr ~= player and not (teamCheck and plr.Team ~= nil and plr.Team == player.Team) and not Feat.isSafe(plr) then
 			local c = plr.Character
 			local r = c and c:FindFirstChild("HumanoidRootPart")
 			local h = c and c:FindFirstChildOfClass("Humanoid")
@@ -3495,7 +3527,7 @@ Feat.aim = function()
 	end
 	local bestPart, bestD
 	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= player and not (Config.AimTeamCheck and plr.Team ~= nil and plr.Team == player.Team) then
+		if plr ~= player and not (Config.AimTeamCheck and plr.Team ~= nil and plr.Team == player.Team) and not Feat.isSafe(plr) then
 			local c = plr.Character
 			local h = c and c:FindFirstChildOfClass("Humanoid")
 			local part = c and (c:FindFirstChild(Config.AimPart) or c:FindFirstChild("HumanoidRootPart"))
@@ -3935,9 +3967,138 @@ Feat.bypassRun = function()
 	end)
 end
 
+-- UPGRADES: whitelist, next target, session stats, crosshair, time of day
+Feat.friends = {}
+local function cacheFriend(plr)
+	task.spawn(function()
+		local ok, res = pcall(function() return player:IsFriendsWith(plr.UserId) end)
+		Feat.friends[plr] = ok and res or false
+	end)
+end
+for _, plr in ipairs(Players:GetPlayers()) do if plr ~= player then cacheFriend(plr) end end
+table.insert(connections, Players.PlayerAdded:Connect(cacheFriend))
+
+-- true when HvH features (orbit / aim / aura) must leave this player alone
+Feat.isSafe = function(plr)
+	if Config.WhitelistFriends and Feat.friends[plr] then return true end
+	local list = Config.Whitelist
+	if list and list ~= "" then
+		local n, dn = string.lower(plr.Name), string.lower(plr.DisplayName)
+		for w in string.gmatch(string.lower(list), "[^,]+") do
+			w = string.match(w, "^%s*(.-)%s*$")
+			if w ~= "" and (n == w or dn == w or string.find(n, w, 1, true)) then return true end
+		end
+	end
+	return false
+end
+
+-- cycle the orbit target: closest -> next closest -> ... (writes the name into "Target Name")
+Feat.nextTarget = function()
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return nil end
+	local list = {}
+	for _, plr in ipairs(Players:GetPlayers()) do
+		local r = plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+		local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+		if r and h and h.Health > 0 and not Feat.isSafe(plr) then
+			list[#list + 1] = { plr = plr, d = (r.Position - hrp.Position).Magnitude }
+		end
+	end
+	if #list == 0 then return nil end
+	table.sort(list, function(a, b) return a.d < b.d end)
+	local cur = string.lower(Config.OrbitTarget or "")
+	local idx = 0
+	for i, e in ipairs(list) do
+		if cur ~= "" and string.lower(e.plr.Name) == cur then idx = i end
+	end
+	local nxt = list[idx % #list + 1].plr
+	Config.OrbitTarget = nxt.Name
+	if UI.sync then UI.sync() end
+	notify("Target", "Now targeting " .. nxt.DisplayName, true)
+	return nxt
+end
+
+-- session stats
+Feat.deaths = 0
+Feat.sessStart = os.clock()
+local function watchDeath(char)
+	local hum = char:WaitForChild("Humanoid", 10)
+	if hum then hum.Died:Connect(function() Feat.deaths = Feat.deaths + 1 end) end
+end
+if player.Character then task.spawn(watchDeath, player.Character) end
+table.insert(connections, player.CharacterAdded:Connect(watchDeath))
+task.spawn(function()
+	while running do
+		if UI.sessInfo then
+			local t = math.floor(os.clock() - Feat.sessStart)
+			UI.sessInfo.Text = string.format("Kills %d | Deaths %d | %d:%02d:%02d", Feat.kills or 0, Feat.deaths, t // 3600, (t % 3600) // 60, t % 60)
+		end
+		task.wait(1)
+	end
+end)
+
+-- crosshair (Drawing)
+Feat.cross = {}
+if Drawing then
+	for i = 1, 5 do
+		local ok, ln = pcall(function() return Drawing.new(i < 5 and "Line" or "Circle") end)
+		if ok and ln then
+			ln.Visible = false
+			if i < 5 then ln.Thickness = 2 else ln.Radius = 2 ln.Filled = true end
+			Feat.cross[i] = ln
+		end
+	end
+end
+table.insert(connections, RunService.RenderStepped:Connect(function()
+	if #Feat.cross == 0 then return end
+	local cam = Workspace.CurrentCamera
+	if not cam then return end
+	local on = Config.Crosshair
+	local c = cam.ViewportSize / 2
+	local g, s = Config.CrossGap, Config.CrossSize
+	local col = Config.ColorCross
+	local dirs = { Vector2.new(1, 0), Vector2.new(-1, 0), Vector2.new(0, 1), Vector2.new(0, -1) }
+	for i = 1, 4 do
+		local ln = Feat.cross[i]
+		if ln then
+			ln.Visible = on
+			if on then
+				ln.From = c + dirs[i] * g
+				ln.To = c + dirs[i] * (g + s)
+				ln.Color = col
+			end
+		end
+	end
+	local dot = Feat.cross[5]
+	if dot then
+		dot.Visible = on
+		if on then
+			dot.Position = c
+			dot.Color = col
+		end
+	end
+end))
+
+-- time of day
+task.spawn(function()
+	local orig
+	while running do
+		local L = Feat.Lighting
+		if Config.TimeOn then
+			if not orig then orig = L.ClockTime end
+			L.ClockTime = Config.TimeVal
+		elseif orig then
+			L.ClockTime = orig
+			orig = nil
+		end
+		task.wait(0.1)
+	end
+end)
+
 -- undo everything when the script is unloaded
 Feat.cleanup = function()
 	pcall(Feat.fpsRestore)
+	for _, ln in pairs(Feat.cross) do pcall(function() ln:Remove() end) end
 	Config.BypassEnabled = false
 	Feat.bypass.id = Feat.bypass.id + 1
 	if Feat.bypass.platform then pcall(function() Feat.bypass.platform:Destroy() end) end
