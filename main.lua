@@ -233,6 +233,7 @@ local screenGui
 do
 	local DESIGN_W, DESIGN_H = 1515, 860
 	local SIDE_W, HEAD_H, PROFILE_H = 415, 147, 120
+	local ASSET_ID = "rbxassetid://93960368510055" -- background + logo image
 
 	local F = {
 		Reg = Enum.Font.Gotham, Med = Enum.Font.GothamMedium, Semi = Enum.Font.GothamSemibold,
@@ -286,6 +287,14 @@ do
 	corner(main, 30)
 	local mainStroke = stroke(main, Color3.fromRGB(32, 72, 72), 2)
 	UI.main = main
+
+	-- background image (lower ImageTransparency = stronger image, higher = fainter)
+	local bg = create("ImageLabel", {
+		Name = "Background", Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1,
+		Image = ASSET_ID, ImageTransparency = 0.55, ScaleType = Enum.ScaleType.Crop,
+		ZIndex = 0, Active = false,
+	}, main)
+	create("UICorner", { CornerRadius = UDim.new(0, 30) }, bg)
 
 	-- outline ripple: rings keep expanding out of the window border (same effect as the small logo)
 	local function outlineRing(strong)
@@ -413,14 +422,14 @@ do
 		end
 	end
 
-	-- round avatar badge, top-center, sticking out of the window like the reference
+	-- round logo badge, top-center, sticking out of the window like the reference
 	local badge = create("ImageLabel", {
 		Size = UDim2.fromOffset(96, 96), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, -12),
 		BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Image = "", ZIndex = 5,
 	}, main)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, badge)
 	stroke(badge, Color3.fromRGB(58, 140, 255), 4)
-	loadAvatar(badge)
+	badge.Image = ASSET_ID
 
 	-- header buttons (drawn with frames so no font glyph is needed)
 	local function hbtn(offsetFromRight)
@@ -1540,7 +1549,7 @@ do
 	local logoStroke = stroke(logoBtn, Color3.fromRGB(58, 140, 255), 4)
 	local miniAv = create("ImageLabel", { Size = UDim2.new(1, -8, 1, -8), Position = UDim2.fromOffset(4, 4), BackgroundTransparency = 1, Image = "" }, logoBtn)
 	create("UICorner", { CornerRadius = UDim.new(1, 0) }, miniAv)
-	loadAvatar(miniAv)
+	miniAv.Image = ASSET_ID
 	local logoScale = create("UIScale", { Scale = 1 }, logoBtn)
 
 	-- ripple effect: rings expand out of the logo (continuously while minimized, bigger on tap)
