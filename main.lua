@@ -1,4 +1,4 @@
--- CodeBot V1.3 | Roblox Luau (Delta compatible)
+-- CodeBot V1.4 | Roblox Luau (Delta compatible)
 -- JJS Item ESP  |  Atom-style GUI  |  HvH tab (orbit / spin)  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
 -- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
@@ -76,6 +76,12 @@ local Config = {
 	OrbitMaxDist = 1000, OrbitKey = "None", OrbitAttack = false, OrbitAttackCPS = 12,
 	SpinOn = false, SpinSpeed = 1500,
 	TargetHL = true, NotifyKill = true, HitboxOn = false, HitboxSize = 10, VoidSafe = true, VoidY = -500,
+	AimOn = false, AimPart = "Head", AimSmooth = 40, AimFOV = 250, ShowFOV = true, AimTeamCheck = true, AimWallCheck = false,
+	AuraOn = false, AuraRange = 15, AuraCPS = 10, AutoFace = false,
+	PanicOn = false, PanicHP = 25, PanicHeight = 200,
+	CFrameSpeed = false, CFrameSpeedVal = 40, Bhop = false, LowGravity = false, GravityVal = 60,
+	FlyKey = "None", NoclipKey = "None", SpeedKey = "None",
+	WP1 = "", WP2 = "", WP3 = "",
 
 	-- utility
 	AntiAFK = true, Fullbright = false, FOVOn = false, FOVVal = 90,
@@ -137,6 +143,7 @@ loadConfig() -- settings from last time
 -- risky toggles never start switched on
 Config.Fly, Config.Noclip, Config.AutoCollect, Config.WalkCollect, Config.OrbitOn = false, false, false, false, false
 Config.SpectateOn, Config.ClickTP, Config.AutoClick, Config.SpinOn, Config.OrbitAttack = false, false, false, false, false
+Config.AimOn, Config.AuraOn, Config.AutoFace, Config.CFrameSpeed, Config.Bhop, Config.LowGravity = false, false, false, false, false, false
 Config.HitboxOn = false
 
 local connections = {}
@@ -971,16 +978,16 @@ do
 	xpcall(function() -- Movement
 		local p = newPage("Movement")
 		local a = section(p.left, "Speed & Jump", 1, "▶")
-		addCheckbox(a, "Walk Speed", "SpeedOn")
+		UI.setSpeed = addCheckbox(a, "Walk Speed", "SpeedOn")
 		addSlider(a, "Speed Value", "WalkSpeedVal", 16, 300, "")
 		addCheckbox(a, "Jump Power", "JumpOn")
 		addSlider(a, "Jump Value", "JumpPowerVal", 50, 400, "")
 		addCheckbox(a, "Infinite Jump", "InfJump")
 		finish(a)
 		local b = section(p.right, "Fly & Noclip", 1, "▶")
-		addCheckbox(b, "Fly (move with the stick, look to steer)", "Fly")
+		UI.setFly = addCheckbox(b, "Fly (move with the stick, look to steer)", "Fly")
 		addSlider(b, "Fly Speed", "FlySpeed", 10, 300, "")
-		addCheckbox(b, "Noclip", "Noclip")
+		UI.setNoclip = addCheckbox(b, "Noclip", "Noclip")
 		finish(b)
 	end, tabFail("Movement"))
 
@@ -1097,6 +1104,148 @@ do
 		finish(c)
 	end, tabFail("Server"))
 
+	xpcall(function() -- Combat (aim assist, kill aura, panic escape)
+		local p = newPage("Combat")
+
+		local a = section(p.left, "Aim Assist", 1, "▶")
+		addCheckbox(a, "Aim Assist (camera lock)", "AimOn", function(v)
+			notify("Aim Assist", v and "ON - camera locks onto the nearest player" or "OFF", true)
+		end)
+		addDropdown(a, "Aim Part", "AimPart", { "Head", "UpperTorso", "HumanoidRootPart" })
+		addSlider(a, "Smoothness (100 = instant)", "AimSmooth", 5, 100, "%")
+		addSlider(a, "Aim FOV (pixels)", "AimFOV", 50, 800, " px")
+		addCheckbox(a, "Show FOV Circle (needs Drawing)", "ShowFOV")
+		addCheckbox(a, "Skip Teammates", "AimTeamCheck")
+		addCheckbox(a, "Wall Check (visible only)", "AimWallCheck")
+		finish(a)
+
+		local b = section(p.left, "Kill Aura", 2, "▶")
+		addCheckbox(b, "Kill Aura (auto attack in range)", "AuraOn", function(v)
+			notify("Kill Aura", v and "ON - attacking players in range" or "OFF", true)
+		end)
+		addSlider(b, "Aura Range", "AuraRange", 5, 60, " st")
+		addSlider(b, "Attacks Per Second", "AuraCPS", 1, 30, "")
+		addCheckbox(b, "Auto Face Nearest Player", "AutoFace")
+		finish(b)
+
+		local c = section(p.left, "Panic Escape", 3, "▶")
+		addCheckbox(c, "Panic Escape (low HP)", "PanicOn")
+		addSlider(c, "Trigger Below HP", "PanicHP", 5, 90, "%")
+		addSlider(c, "Escape Height", "PanicHeight", 50, 500, " st")
+		addInfo(c, "Teleports you up and freezes you for 4 seconds")
+		finish(c)
+	end, tabFail("Combat"))
+
+	xpcall(function() -- Players list (TP / Spectate / Orbit)
+		local p = newPage("Players")
+		local a = section(p.left, "Server Players", 1, "◉")
+		UI.plRows = {}
+		UI.plEntries = {}
+		for i = 1, 30 do
+			local r = row(a, 100)
+			local nameL = txt(r, "", 28, C.White, F.Med)
+			nameL.Position = UDim2.new(0, 72, 0.5, 0)
+			nameL.Size = UDim2.new(0, 330, 0, 38)
+			local distL = txt(r, "", 26, C.Accent, F.Med)
+			distL.Position = UDim2.new(0, 410, 0.5, 0)
+			distL.Size = UDim2.new(0, 150, 0, 36)
+			local function small(label, xOff)
+				local b = create("TextButton", { Size = UDim2.fromOffset(78, 46), Position = UDim2.new(1, xOff, 0.5, -27), BackgroundColor3 = C.IconBox, BorderSizePixel = 0, Text = label, TextSize = 18, Font = F.Bold, TextColor3 = C.White, AutoButtonColor = true }, r)
+				corner(b, 12)
+				return b
+			end
+			local tpB, specB, orbB = small("TP", -330), small("Spec", -240), small("Orbit", -150)
+			tpB.MouseButton1Click:Connect(function()
+				local e = UI.plEntries[i]
+				if e then Feat.tpPlayer(e.plr.Name) end
+			end)
+			specB.MouseButton1Click:Connect(function()
+				local e = UI.plEntries[i]
+				if e then
+					Config.TPName = e.plr.Name
+					Config.SpectateOn = true
+					UI.sync()
+					notify("Spectate", "Watching " .. e.plr.DisplayName .. " (turn off in Utility)", true)
+				end
+			end)
+			orbB.MouseButton1Click:Connect(function()
+				local e = UI.plEntries[i]
+				if e then
+					Config.OrbitTarget = e.plr.Name
+					UI.sync()
+					notify("Orbit target", e.plr.DisplayName .. " (enable Orbit in the HvH tab)", true)
+				end
+			end)
+			r.Visible = false
+			r:SetAttribute("hidden", true)
+			UI.plRows[i] = { frame = r, name = nameL, dist = distL }
+		end
+		finish(a)
+		local b = section(p.left, "Info", 2, "◉")
+		UI.plCount = addInfo(b, "Players: 0")
+		finish(b)
+	end, tabFail("Players"))
+
+	xpcall(function() -- Extra movement + hotkeys (added to the Movement page)
+		local p = pages["Movement"]
+		local a = section(p.left, "Extra Movement", 3, "▶")
+		addCheckbox(a, "CFrame Speed (extra boost)", "CFrameSpeed")
+		addSlider(a, "Boost (studs/s)", "CFrameSpeedVal", 5, 200, "")
+		addCheckbox(a, "Bunny Hop (auto jump while moving)", "Bhop")
+		addCheckbox(a, "Low Gravity", "LowGravity")
+		addSlider(a, "Gravity", "GravityVal", 5, 190, "")
+		finish(a)
+		local b = section(p.left, "Hotkeys", 4, "▶")
+		addKeybind(b, "Fly Key", "FlyKey")
+		addKeybind(b, "Noclip Key", "NoclipKey")
+		addKeybind(b, "Walk Speed Key", "SpeedKey")
+		finish(b)
+	end, tabFail("Movement extras"))
+
+	xpcall(function() -- Waypoints (added to the Utility page, saved with the config)
+		local p = pages["Utility"]
+		local w = section(p.right, "Waypoints", 2, "■")
+		UI.wpInfo = addInfo(w, "Save a spot, then teleport back to it any time")
+		for i = 1, 3 do
+			addButton(w, "Save Waypoint " .. i, function(btn)
+				flash(btn, Feat.saveWP(i) and "Saved!" or "No character", "Save Waypoint " .. i)
+				if UI.wpInfo then UI.wpInfo.Text = "Slot " .. i .. ": " .. Config["WP" .. i] end
+			end)
+			addButton(w, "Go To Waypoint " .. i, function(btn)
+				flash(btn, Feat.goWP(i) and "Teleported!" or "Empty slot", "Go To Waypoint " .. i)
+			end)
+		end
+		finish(w)
+	end, tabFail("Waypoints"))
+
+	xpcall(function() -- Help (quick guide to every tab)
+		local p = newPage("Help")
+		local a = section(p.left, "Quick Guide", 1, "?")
+		addInfo(a, "Status: FPS, ping, item counts, hide username", "Main")
+		addInfo(a, "Item ESP / Player ESP: glow, boxes, names, tracers", "Visuals")
+		addInfo(a, "Alerts: notification + sound when chosen items spawn", "Alerts")
+		addInfo(a, "Item List / Pickup: teleport, auto pickup, auto collect", "Items")
+		addInfo(a, "Movement / Players / Utility: speed, fly, waypoints", "Player")
+		addInfo(a, "HvH / Combat: orbit, spin, aim assist, kill aura", "HvH")
+		finish(a)
+
+		local b = section(p.left, "HvH Tips", 2, "?")
+		addInfo(b, "Orbit: pick a mode, then turn Orbit on", "Start")
+		addInfo(b, "Lock Target keeps one player until they die", "Lock")
+		addInfo(b, "If a teleport is blocked the script walks to the target", "Walk")
+		addInfo(b, "Panic Escape and Void Safe protect you while fighting", "Safety")
+		addInfo(b, "Players tab: tap Orbit next to a name to pick them", "Target")
+		finish(b)
+
+		local c = section(p.left, "Controls", 3, "?")
+		addInfo(c, "Drag the header to move the window, tap the dash to minimize")
+		addInfo(c, "Tap the round logo to bring the window back")
+		addInfo(c, "Settings > Window changes drag speed and logo size")
+		addInfo(c, "Risky toggles always start off when the script loads")
+		addInfo(c, "Settings > Save Config keeps your options for next time")
+		finish(c)
+	end, tabFail("Help"))
+
 	-- sidebar entries (categories) + pill tabs (pages), like the reference ---
 	local catBtns, pillBtns, catPages, pageCat, lastPage = {}, {}, {}, {}, {}
 	local function selectPage(name)
@@ -1165,12 +1314,12 @@ do
 		end
 	end
 
-	addCategory("Main", { { "Status", "⌂" }, { "Server", "■" } })
+	addCategory("Main", { { "Status", "⌂" }, { "Server", "■" }, { "Help", "?" } })
 	addCategory("Visuals", { { "Item ESP", "◎" }, { "Player ESP", "◉" } })
 	addCategory("Alerts", { { "Alerts", "▲" } })
 	addCategory("Items", { { "Item List", "◈" }, { "Pickup", "◆" } })
-	addCategory("Player", { { "Movement", "▶" }, { "Utility", "■" } })
-	addCategory("HvH", { { "HvH", "◆" } })
+	addCategory("Player", { { "Movement", "▶" }, { "Players", "◉" }, { "Utility", "■" } })
+	addCategory("HvH", { { "HvH", "◆" }, { "Combat", "▶" } })
 	addCategory("Settings", { { "Colors", "◐" }, { "Settings", "◍" } })
 	selectPage("Status")
 	UI.applyUsername()
@@ -1935,6 +2084,9 @@ table.insert(connections, UserInputService.InputBegan:Connect(function(input, gp
 	if Config.OrbitKey ~= "None" and kn == Config.OrbitKey and UI.setOrbit then
 		UI.setOrbit(not Config.OrbitOn)
 	end
+	if Config.FlyKey ~= "None" and kn == Config.FlyKey and UI.setFly then UI.setFly(not Config.Fly) end
+	if Config.NoclipKey ~= "None" and kn == Config.NoclipKey and UI.setNoclip then UI.setNoclip(not Config.Noclip) end
+	if Config.SpeedKey ~= "None" and kn == Config.SpeedKey and UI.setSpeed then UI.setSpeed(not Config.SpeedOn) end
 end))
 
 ---------------------------------------------------------------------
@@ -2184,6 +2336,7 @@ Feat.step = function(dt)
 		pcall(Feat.updatePlayers)
 		pcall(Feat.light)
 		pcall(Feat.hitbox)
+		pcall(Feat.gravity)
 	end
 
 	local char = player.Character
@@ -2202,6 +2355,21 @@ Feat.step = function(dt)
 			hrp.CFrame = Feat.safePos + Vector3.new(0, 4, 0)
 			notify("Void Safe", "Returned to the last safe spot", true)
 		end
+	end
+
+	-- panic escape: at low HP go high up and freeze for a few seconds
+	if Config.PanicOn and hum.Health > 0 and hum.MaxHealth > 0 and (hum.Health / hum.MaxHealth * 100) <= Config.PanicHP
+		and os.clock() - (Feat.panicT or 0) > 10 then
+		Feat.panicT = os.clock()
+		if Config.OrbitOn and UI.setOrbit then UI.setOrbit(false) end
+		hrp.CFrame = hrp.CFrame + Vector3.new(0, Config.PanicHeight, 0)
+		hrp.Anchored = true
+		notify("Panic Escape", "Low HP - teleported up", true)
+		task.delay(4, function() if hrp.Parent then hrp.Anchored = false end end)
+	end
+
+	if Config.Bhop and not Config.Fly and hum.MoveDirection.Magnitude > 0.1 and hum.FloorMaterial ~= Enum.Material.Air then
+		hum:ChangeState(Enum.HumanoidStateType.Jumping)
 	end
 
 	if Config.SpeedOn and not Feat.walking then
@@ -2939,9 +3107,185 @@ task.spawn(function()
 			local t = math.floor(Workspace.DistributedGameTime)
 			if UI.srvAge then UI.srvAge.Text = string.format("Server time: %dh %02dm %02ds", t // 3600, (t % 3600) // 60, t % 60) end
 		end
+		pcall(Feat.refreshPlayers)
 		task.wait(1)
 	end
 end)
+
+---------------------------------------------------------------------
+-- COMBAT EXTRAS: aim assist, kill aura, auto face, movement extras, waypoints, player list
+---------------------------------------------------------------------
+Feat.nearestEnemy = function(maxD, teamCheck)
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return nil end
+	local best, bestD, bestHum
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and not (teamCheck and plr.Team ~= nil and plr.Team == player.Team) then
+			local c = plr.Character
+			local r = c and c:FindFirstChild("HumanoidRootPart")
+			local h = c and c:FindFirstChildOfClass("Humanoid")
+			if r and h and h.Health > 0 then
+				local d = (r.Position - hrp.Position).Magnitude
+				if d <= maxD and (not bestD or d < bestD) then best, bestD, bestHum = r, d, h end
+			end
+		end
+	end
+	return best, bestD, bestHum
+end
+
+-- aim assist: smoothly turns the camera towards the player closest to the screen centre
+Feat.fovCircle = nil
+Feat.aim = function()
+	local cam = Workspace.CurrentCamera
+	if not cam then return end
+	local vp = cam.ViewportSize
+	local center = Vector2.new(vp.X / 2, vp.Y / 2)
+	if Drawing then
+		if not Feat.fovCircle then
+			local ok, c = pcall(function() return Drawing.new("Circle") end)
+			if ok and c then
+				c.Thickness = 1.5
+				c.NumSides = 48
+				c.Filled = false
+				c.Visible = false
+				Feat.fovCircle = c
+			end
+		end
+		local c = Feat.fovCircle
+		if c then
+			c.Visible = Config.AimOn and Config.ShowFOV
+			c.Position = center
+			c.Radius = Config.AimFOV
+			c.Color = Config.ColorPlayer
+		end
+	end
+	if not Config.AimOn or Config.OrbitOn then return end
+
+	local params
+	if Config.AimWallCheck then
+		params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { player.Character }
+	end
+	local bestPart, bestD
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and not (Config.AimTeamCheck and plr.Team ~= nil and plr.Team == player.Team) then
+			local c = plr.Character
+			local h = c and c:FindFirstChildOfClass("Humanoid")
+			local part = c and (c:FindFirstChild(Config.AimPart) or c:FindFirstChild("HumanoidRootPart"))
+			if part and h and h.Health > 0 then
+				local v, on = cam:WorldToViewportPoint(part.Position)
+				if on and v.Z > 0 then
+					local d = (Vector2.new(v.X, v.Y) - center).Magnitude
+					if d <= Config.AimFOV and (not bestD or d < bestD) then
+						local visible = true
+						if params then
+							local hit = Workspace:Raycast(cam.CFrame.Position, part.Position - cam.CFrame.Position, params)
+							if hit and not hit.Instance:IsDescendantOf(c) then visible = false end
+						end
+						if visible then bestPart, bestD = part, d end
+					end
+				end
+			end
+		end
+	end
+	if bestPart then
+		local goal = CFrame.lookAt(cam.CFrame.Position, bestPart.Position)
+		cam.CFrame = cam.CFrame:Lerp(goal, math.clamp(Config.AimSmooth / 100, 0.02, 1))
+	end
+end
+table.insert(connections, RunService.RenderStepped:Connect(guard("aim", Feat.aim)))
+
+-- kill aura (activates the equipped tool when a player is in range) + auto face + CFrame speed
+Feat.auraAcc = 0
+Feat.combat = function(dt)
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not (hrp and hum and hum.Health > 0) then return end
+	local busy = Config.OrbitOn or Config.Fly or Config.SpinOn or Feat.walking
+
+	if Config.AutoFace and not busy then
+		local r = Feat.nearestEnemy(60, Config.OrbitTeamCheck)
+		if r then
+			local p = r.Position
+			hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(p.X, hrp.Position.Y, p.Z))
+		end
+	end
+
+	if Config.AuraOn then
+		Feat.auraAcc = Feat.auraAcc + dt
+		if Feat.auraAcc >= 1 / math.max(Config.AuraCPS, 1) then
+			Feat.auraAcc = 0
+			local r = Feat.nearestEnemy(Config.AuraRange, Config.OrbitTeamCheck)
+			if r then
+				local tool = char:FindFirstChildOfClass("Tool")
+				if tool then pcall(function() tool:Activate() end) end
+			end
+		end
+	end
+
+	if Config.CFrameSpeed and not busy and hum.MoveDirection.Magnitude > 0.1 then
+		hrp.CFrame = hrp.CFrame + hum.MoveDirection * (Config.CFrameSpeedVal * dt)
+	end
+end
+table.insert(connections, RunService.Heartbeat:Connect(guard("combat", Feat.combat)))
+
+-- low gravity (restored when switched off / unloaded)
+Feat.gravity = function()
+	if Config.LowGravity then
+		if not Feat.orig.gravity then Feat.orig.gravity = Workspace.Gravity end
+		Workspace.Gravity = Config.GravityVal
+	elseif Feat.orig.gravity then
+		Workspace.Gravity = Feat.orig.gravity
+		Feat.orig.gravity = nil
+	end
+end
+
+-- waypoints (stored in the config as "x,y,z" so they are saved too)
+Feat.saveWP = function(i)
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+	local p = hrp.Position
+	Config["WP" .. i] = string.format("%.1f,%.1f,%.1f", p.X, p.Y, p.Z)
+	return true
+end
+
+Feat.goWP = function(i)
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	local x, y, z = string.match(Config["WP" .. i] or "", "^(-?[%d%.]+),(-?[%d%.]+),(-?[%d%.]+)$")
+	if not (hrp and x) then return false end
+	hrp.CFrame = CFrame.new(tonumber(x), tonumber(y) + 3, tonumber(z))
+	return true
+end
+
+-- player list page (nearest first)
+Feat.refreshPlayers = function()
+	if not UI.plRows then return end
+	local origin = currentOrigin()
+	local arr = {}
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player then
+			local r = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+			arr[#arr + 1] = { plr = plr, dist = r and (r.Position - origin).Magnitude or math.huge }
+		end
+	end
+	table.sort(arr, function(x, y) return x.dist < y.dist end)
+	for i, r in ipairs(UI.plRows) do
+		local e = arr[i]
+		UI.plEntries[i] = e
+		if e then
+			r.frame:SetAttribute("hidden", false)
+			r.frame.Visible = true
+			r.name.Text = e.plr.DisplayName .. " (@" .. e.plr.Name .. ")"
+			r.dist.Text = e.dist < math.huge and (math.floor(e.dist) .. " st") or "-"
+		else
+			r.frame:SetAttribute("hidden", true)
+			r.frame.Visible = false
+		end
+	end
+	if UI.plCount then UI.plCount.Text = "Players: " .. #arr .. " (showing " .. math.min(#arr, #UI.plRows) .. ")" end
+end
 
 -- undo everything when the script is unloaded
 Feat.cleanup = function()
@@ -2965,6 +3309,9 @@ Feat.cleanup = function()
 	Feat.restorePrompts()
 	Config.HitboxOn = false
 	pcall(Feat.hitboxRestore)
+	Config.LowGravity, Config.AimOn, Config.AuraOn = false, false, false
+	pcall(Feat.gravity)
+	if Feat.fovCircle then pcall(function() Feat.fovCircle:Remove() end) Feat.fovCircle = nil end
 	for plr in pairs(Feat.pl) do Feat.dropPlayer(plr) end
 end
 
