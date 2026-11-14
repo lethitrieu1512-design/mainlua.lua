@@ -50,7 +50,7 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 65, LogoSize = 64, ClickSound = true, RippleOn = true, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
+	DragSpeed = 65, LogoSize = 64, ClickSound = true, RippleOn = true, BypassEnabled = false, BypassSpot = "Sky Platform", BypassMax = 12, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
 	-- notifications (Roblox's own notification popup)
 	StatusNotify = true, NotifyDuration = 6, NotifyStyle = "Hub",
@@ -144,6 +144,7 @@ loadConfig() -- settings from last time
 -- risky toggles never start switched on
 Config.Fly, Config.Noclip, Config.AutoCollect, Config.WalkCollect, Config.OrbitOn = false, false, false, false, false
 Config.SpectateOn, Config.ClickTP, Config.AutoClick, Config.SpinOn, Config.OrbitAttack = false, false, false, false, false
+Config.BypassEnabled = false
 Config.AimOn, Config.AuraOn, Config.AutoFace, Config.CFrameSpeed, Config.Bhop, Config.LowGravity = false, false, false, false, false, false
 Config.HitboxOn = false
 
@@ -1376,6 +1377,21 @@ do
 
 	xpcall(function() -- Tools
 		local p = newPage("Tools")
+		local z = section(p.left, "Bypass Anticheat", 1, "◆")
+		addCheckbox(z, "Bypass Anticheat", "BypassEnabled", function(v)
+			if v then Feat.bypassRun() else Feat.bypassStop() end
+		end)
+		addDropdown(z, "Teleport Spot", "BypassSpot", { "Sky Platform", "Random Player", "Spawn", "Waypoint" })
+		addSlider(z, "Max Attempts", "BypassMax", 3, 40, "")
+		UI.bypassInfo = addInfo(z, "Idle", "Bypass Status")
+		addButton(z, "Strong Reset Character", function(btn)
+			flash(btn, "Resetting...", "Strong Reset Character")
+			task.spawn(function()
+				local nc = Feat.strongReset()
+				Feat.bpStatus(nc and "Reset worked" or "Reset failed")
+			end)
+		end)
+		finish(z)
 		local a = section(p.left, "Waypoints", 1, "◆")
 		addDropdown(a, "Slot", "WPSlot", { "1", "2", "3", "4", "5" }, function() Feat.wpInfo() end)
 		UI.wpInfo = addInfo(a, "Slot 1: empty", "Saved Position")
@@ -3739,9 +3755,192 @@ table.insert(connections, UserInputService.InputBegan:Connect(function(input, gp
 	if input.KeyCode.Name == Config.MenuKey and UI.showMain and UI.main then UI.showMain(not UI.main.Visible) end
 end))
 
+-- BYPASS ANTICHEAT (just a name): teleport -> if the teleport does not stick, reset the character with a
+-- chain of reset methods that does NOT use Health = 0 / BreakJoints (those did not work in JJS) -> try again
+Feat.bypass = { id = 0, status = "Idle" }
+Feat.bpStatus = function(t)
+	Feat.bypass.status = t
+	if UI.bypassInfo then UI.bypassInfo.Text = t end
+end
+
+-- waits for a fresh, living character (different from oldChar)
+Feat.waitRespawn = function(oldChar, timeout)
+	local t0 = os.clock()
+	while running and os.clock() - t0 < timeout do
+		local c = player.Character
+		if c and c ~= oldChar then
+			local h = c:FindFirstChild("HumanoidRootPart")
+			local hum = c:FindFirstChildOfClass("Humanoid")
+			if h and hum and hum.Health > 0 then return c end
+		end
+		task.wait(0.1)
+	end
+	return nil
+end
+
+Feat.resetMethods = {
+	{ name = "void drop", fn = function(char, hrp, hum)
+		-- the server kills anything that falls below FallenPartsDestroyHeight, and our position replicates
+		local limit = Workspace.FallenPartsDestroyHeight
+		if limit < -100000 then limit = -100000 end
+		local y = limit - 80
+		local t0 = os.clock()
+		while os.clock() - t0 < 3 and player.Character == char and hum.Health > 0 do
+			hrp.CFrame = CFrame.new(hrp.Position.X, y, hrp.Position.Z)
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			task.wait(0.1)
+		end
+	end },
+	{ name = "dead state", fn = function(char, hrp, hum)
+		for _ = 1, 3 do
+			pcall(function() hum:ChangeState(Enum.HumanoidStateType.Dead) end)
+			task.wait(0.3)
+		end
+	end },
+	{ name = "menu reset", fn = function(char, hrp, hum)
+		-- Esc -> R -> Enter is Roblox's own reset shortcut
+		local vim = game:GetService("VirtualInputManager")
+		for _, k in ipairs({ Enum.KeyCode.Escape, Enum.KeyCode.R, Enum.KeyCode.Return }) do
+			pcall(function()
+				vim:SendKeyEvent(true, k, false, game)
+				task.wait(0.08)
+				vim:SendKeyEvent(false, k, false, game)
+			end)
+			task.wait(0.4)
+		end
+		if game:GetService("GuiService").MenuIsOpen then -- still open: close it again
+			pcall(function()
+				vim:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
+				task.wait(0.08)
+				vim:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
+			end)
+		end
+	end },
+}
+
+-- tries every reset method (twice around) until a new living character appears; returns it or nil
+Feat.strongReset = function(aliveFn)
+	aliveFn = aliveFn or function() return running end
+	for _ = 1, 2 do
+		for _, m in ipairs(Feat.resetMethods) do
+			if not aliveFn() then return nil end
+			local char = player.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if char and hrp and hum and hum.Health > 0 then
+				Feat.bpStatus("Resetting (" .. m.name .. ")")
+				pcall(m.fn, char, hrp, hum)
+			end
+			local nc = Feat.waitRespawn(char, 4)
+			if nc then
+				notify("Reset", "Character reset with: " .. m.name, true)
+				return nc
+			end
+		end
+	end
+	return nil
+end
+
+-- where to teleport
+Feat.bpSpot = function(sky)
+	local mode = Config.BypassSpot
+	if mode == "Random Player" then
+		local list = {}
+		for _, plr in ipairs(Players:GetPlayers()) do
+			local r = plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+			if r then list[#list + 1] = r end
+		end
+		if #list > 0 then return list[math.random(#list)].Position + Vector3.new(0, 5, 0) end
+	elseif mode == "Spawn" then
+		local sp = Workspace:FindFirstChildWhichIsA("SpawnLocation", true)
+		if sp then return sp.Position + Vector3.new(0, 6, 0) end
+	elseif mode == "Waypoint" then
+		local cf = Feat.wp and Feat.wp[tonumber(Config.WPSlot) or 1]
+		if cf then return cf.Position + Vector3.new(0, 3, 0) end
+	end
+	return sky -- Sky Platform (also the fallback)
+end
+
+-- teleports to `dest` and watches for ~2s; true only if we stayed there (no rubber-band)
+Feat.bpTry = function(dest, alive)
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+	hrp.CFrame = CFrame.new(dest)
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	for _ = 1, 6 do
+		task.wait(0.35)
+		if not alive() then return false end
+		local h = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if player.Character ~= char or not h then return false end
+		if (h.Position - dest).Magnitude > 20 then return false end -- pulled back = stuck
+	end
+	return true
+end
+
+Feat.bypassStop = function()
+	Feat.bypass.id = Feat.bypass.id + 1
+	Feat.bpStatus("Idle")
+end
+
+Feat.bypassRun = function()
+	Feat.bypass.id = Feat.bypass.id + 1
+	local id = Feat.bypass.id
+	local function alive() return running and Config.BypassEnabled and Feat.bypass.id == id end
+	task.spawn(function()
+		local hrp0 = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		local sky = (hrp0 and hrp0.Position or Vector3.zero) + Vector3.new(0, 350, 0)
+		if Feat.bypass.platform then pcall(function() Feat.bypass.platform:Destroy() end) end
+		local plat = Instance.new("Part")
+		plat.Name = "CodeBotPlatform"
+		plat.Size = Vector3.new(80, 2, 80)
+		plat.Anchored = true
+		plat.Transparency = 0.6
+		plat.Material = Enum.Material.Neon
+		plat.Color = Color3.fromRGB(0, 226, 212)
+		plat.CFrame = CFrame.new(sky - Vector3.new(0, 2, 0))
+		plat.Parent = Workspace
+		Feat.bypass.platform = plat
+
+		local maxA = Config.BypassMax
+		local attempts, ok = 0, false
+		while alive() and attempts < maxA do
+			attempts = attempts + 1
+			Feat.bpStatus("Attempt " .. attempts .. "/" .. maxA .. ": teleporting")
+			local dest = Feat.bpSpot(sky)
+			if dest and Feat.bpTry(dest, alive) then
+				ok = true
+				break
+			end
+			if not alive() then break end
+			Feat.bpStatus("Attempt " .. attempts .. ": stuck, resetting")
+			local nc = Feat.strongReset(alive)
+			if nc then
+				task.wait(1.2) -- let the new character settle
+			else
+				Feat.bpStatus("Reset did not work, retrying")
+				task.wait(1)
+			end
+		end
+		if Feat.bypass.id ~= id then return end
+		if ok then
+			Feat.bpStatus("Teleport worked (attempt " .. attempts .. ")")
+			notify("Bypass Anticheat", "Teleport worked on attempt " .. attempts, true)
+		elseif alive() then
+			Feat.bpStatus("Gave up after " .. attempts .. " attempts")
+			notify("Bypass Anticheat", "Gave up after " .. attempts .. " attempts", true)
+		end
+		Config.BypassEnabled = false
+		if UI.sync then UI.sync() end
+	end)
+end
+
 -- undo everything when the script is unloaded
 Feat.cleanup = function()
 	pcall(Feat.fpsRestore)
+	Config.BypassEnabled = false
+	Feat.bypass.id = Feat.bypass.id + 1
+	if Feat.bypass.platform then pcall(function() Feat.bypass.platform:Destroy() end) end
 	Feat.stopFly()
 	Config.OrbitOn, Config.SpectateOn, Config.SpinOn = false, false, false
 	pcall(Feat.orbitStop)
