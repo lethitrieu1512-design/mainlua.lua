@@ -50,7 +50,7 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 65, LogoSize = 64, ClickSound = true, MemeSounds = true, MemeVolume = 5, MemeIds = "6042053626, 5153245698, 7149255551, 9125402735, 5148302439, 1837879082, 6729921255, 5034170076, 4809574295, 6823153536, 3398620867, 7236490488, 8426851544, 9046863253, 6647898215, 5629143591, 6203105421",LogoJelly = true, AnimOn = true, RippleOn = true, AIProvider = "Free AI (no key)", AIKey = "", AIModel = "openai", AntiVoid = false, AntiFling = false, HitboxOn = false, HitboxSize = 8, StatsHUD = false, PanicKey = "None", ImportText = "", LoadUrl = "", RunCode = "", AIPrompt = "", AIContinue = true, AIRemember = false,
+	DragSpeed = 65, LogoSize = 64, ClickSound = true, MemeSounds = true, MemeVolume = 5, MemeIds = "6042053626, 5153245698, 7149255551, 9125402735, 5148302439, 1837879082, 6729921255, 5034170076, 4809574295, 6823153536, 3398620867, 7236490488, 8426851544, 9046863253, 6647898215, 5629143591, 6203105421",LogoJelly = true, AnimOn = true, OpenAnim = "Pop", TabAnim = "Slide Up", ClickBurst = true, FingerTrail = true, Rainbow = false, RippleOn = true, AIProvider = "Free AI (no key)", AIKey = "", AIModel = "openai", AntiVoid = false, AntiFling = false, HitboxOn = false, HitboxSize = 8, StatsHUD = false, PanicKey = "None", ImportText = "", LoadUrl = "", RunCode = "", AIPrompt = "", AIContinue = true, AIRemember = false,
 	Whitelist = "", WhitelistFriends = true, Crosshair = false, CrossSize = 12, CrossGap = 4, ColorCross = Color3.fromRGB(0, 226, 212), TimeOn = false, TimeVal = 14, Profile = "1",
 	BypassEnabled = false, BypassSpot = "Sky Platform", BypassMax = 12, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
@@ -1097,6 +1097,11 @@ do
 		addCheckbox(w, "Click Sound", "ClickSound")
 		addCheckbox(w, "Logo Squish & Stretch", "LogoJelly")
 		addCheckbox(w, "Animations (glow, bubbles, sheen, pop-in)", "AnimOn")
+		addCheckbox(w, "Tap Spark Burst", "ClickBurst")
+		addCheckbox(w, "Finger Trail", "FingerTrail")
+		addCheckbox(w, "Rainbow Outline", "Rainbow")
+		addDropdown(w, "Open Animation", "OpenAnim", { "Pop", "Spin", "Drop", "Slide", "Zoom" }, function() if UI.popIn then UI.popIn() end end)
+		addDropdown(w, "Tab Animation", "TabAnim", { "Slide Up", "Slide Side", "Drop", "Zoom" })
 		addCheckbox(w, "Random Meme Sounds (every click)", "MemeSounds")
 		addButton(w, "Remove Sounds That Don't Work", function(btn)
 			flash(btn, "Checking...", "Remove Sounds That Don't Work")
@@ -1646,6 +1651,48 @@ do
 			end
 		end
 	end))
+	-- tap burst + finger trail + rainbow outline
+	local guiInset = function() return screenGui.IgnoreGuiInset and 0 or game:GetService("GuiService"):GetGuiInset().Y end
+	local function spark(pos, size, life, drift, color)
+		local d = create("Frame", { Size = UDim2.fromOffset(size, size), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = color, BorderSizePixel = 0, ZIndex = 50,
+			Position = UDim2.fromOffset(pos.X, pos.Y - guiInset()) }, screenGui)
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }, d)
+		local tw = TweenService:Create(d, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Position = UDim2.fromOffset(pos.X + drift.X, pos.Y - guiInset() + drift.Y), BackgroundTransparency = 1, Size = UDim2.fromOffset(2, 2) })
+		tw:Play()
+		tw.Completed:Connect(function() d:Destroy() end)
+	end
+	local sparkCols = { Color3.fromRGB(0, 226, 212), Color3.fromRGB(58, 140, 255), Color3.fromRGB(255, 255, 255), Color3.fromRGB(255, 200, 60) }
+	local pressing = false
+	local lastTrail = 0
+	table.insert(connections, UserInputService.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+		pressing = true
+		if Config.AnimOn and Config.ClickBurst and main.Visible then
+			for i = 1, 9 do
+				local a = (i / 9) * math.pi * 2 + math.random() * 0.5
+				local r = math.random(40, 90)
+				spark(Vector2.new(input.Position.X, input.Position.Y), math.random(6, 12), 0.5 + math.random() * 0.3, Vector2.new(math.cos(a) * r, math.sin(a) * r), sparkCols[math.random(1, #sparkCols)])
+			end
+		end
+	end))
+	table.insert(connections, UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then pressing = false end
+	end))
+	table.insert(connections, UserInputService.InputChanged:Connect(function(input)
+		if not pressing or not Config.AnimOn or not Config.FingerTrail or not main.Visible then return end
+		if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+		if os.clock() - lastTrail < 0.03 then return end
+		lastTrail = os.clock()
+		spark(Vector2.new(input.Position.X, input.Position.Y), 14, 0.45, Vector2.new(0, 10), sparkCols[math.random(1, 2)])
+	end))
+	table.insert(connections, RunService.RenderStepped:Connect(function()
+		if not Config.Rainbow or not Config.AnimOn then return end
+		local t = os.clock() * 0.25
+		local function hc(o) return Color3.fromHSV((t + o) % 1, 0.8, 1) end
+		outGrad.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, hc(0)), ColorSequenceKeypoint.new(0.33, hc(0.25)), ColorSequenceKeypoint.new(0.66, hc(0.5)), ColorSequenceKeypoint.new(1, hc(0)) })
+		if badgeStroke then badgeStroke.Color = hc(0.5) end
+	end))
 	local function popCards(page)
 		if not Config.AnimOn then return end
 		local i = 0
@@ -1667,7 +1714,16 @@ do
 		for n, page in pairs(pages) do
 			local show = (n == name)
 			if show and not page.frame.Visible then
-				page.frame.Position = UDim2.new(0, 0, 0, 22)
+				local ta = Config.TabAnim
+				local zs = page.frame:FindFirstChild("TabScale") or create("UIScale", { Name = "TabScale" }, page.frame)
+				zs.Scale = 1
+				if ta == "Slide Side" then page.frame.Position = UDim2.new(0, 90, 0, 0)
+				elseif ta == "Drop" then page.frame.Position = UDim2.new(0, 0, 0, -60)
+				elseif ta == "Zoom" then
+					page.frame.Position = UDim2.new(0, 0, 0, 0)
+					zs.Scale = 0.85
+					TweenService:Create(zs, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+				else page.frame.Position = UDim2.new(0, 0, 0, 22) end
 				TweenService:Create(page.frame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = UDim2.new(0, 0, 0, 0) }):Play()
 				popCards(page)
 			end
@@ -1795,12 +1851,20 @@ do
 		updateScale()
 		local full = uiScale.Scale
 		local pos = main.Position
-		uiScale.Scale = full * 0.8
-		main.Position = pos + UDim2.fromOffset(0, 40)
+		local st = Config.OpenAnim
+		local startScale, startOff, posStyle, posTime = 0.8, UDim2.fromOffset(0, 40), Enum.EasingStyle.Quint, 0.35
+		main.Rotation = 0
+		if st == "Spin" then startScale, startOff, main.Rotation = 0.3, UDim2.new(), -140
+		elseif st == "Drop" then startScale, startOff, posStyle, posTime = 1, UDim2.fromOffset(0, -600), Enum.EasingStyle.Bounce, 0.8
+		elseif st == "Slide" then startScale, startOff, posTime = 1, UDim2.fromOffset(-900, 0), 0.5
+		elseif st == "Zoom" then startScale, startOff = 1.5, UDim2.new() end
+		uiScale.Scale = full * startScale
+		main.Position = pos + startOff
 		main.BackgroundTransparency = 1
 		mainStroke.Transparency = 1
-		TweenService:Create(uiScale, TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = full }):Play()
-		TweenService:Create(main, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Position = pos, BackgroundTransparency = 0.08 }):Play()
+		TweenService:Create(uiScale, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = full }):Play()
+		TweenService:Create(main, TweenInfo.new(posTime, posStyle, Enum.EasingDirection.Out), { Position = pos, BackgroundTransparency = 0.08 }):Play()
+		if main.Rotation ~= 0 then TweenService:Create(main, TweenInfo.new(0.55, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Rotation = 0 }):Play() end
 		TweenService:Create(mainStroke, TweenInfo.new(0.5), { Transparency = 0 }):Play()
 		local pg = pages[UI.currentPage or "Status"]
 		if pg then
