@@ -1,4 +1,4 @@
--- CodeBot V1.9 | Roblox Luau (Delta compatible)
+-- CodeBot V2.0 | Roblox Luau (Delta compatible)
 -- JJS Item ESP  |  Atom-style GUI  |  HvH tab (orbit / spin)  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
 -- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
@@ -50,7 +50,7 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 65, LogoSize = 64, ClickSound = true, RippleOn = true, AIProvider = "Claude (Anthropic)", AIKey = "", AIModel = "claude-sonnet-5-5", AIPrompt = "", AIContinue = true, AIRemember = false,
+	DragSpeed = 65, LogoSize = 64, ClickSound = true, RippleOn = true, AIProvider = "Free AI (no key)", AIKey = "", AIModel = "openai", AntiVoid = false, AntiFling = false, HitboxOn = false, HitboxSize = 8, StatsHUD = false, PanicKey = "None", ImportText = "", LoadUrl = "", RunCode = "", AIPrompt = "", AIContinue = true, AIRemember = false,
 	Whitelist = "", WhitelistFriends = true, Crosshair = false, CrossSize = 12, CrossGap = 4, ColorCross = Color3.fromRGB(0, 226, 212), TimeOn = false, TimeVal = 14, Profile = "1",
 	BypassEnabled = false, BypassSpot = "Sky Platform", BypassMax = 12, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
@@ -1448,12 +1448,13 @@ do
 	xpcall(function() -- AI Assistant
 		local p = newPage("Assistant")
 		local a = section(p.left, "AI Script Assistant", 1, "✦")
-		addDropdown(a, "Provider", "AIProvider", { "Claude (Anthropic)", "OpenAI" }, function(v)
-			if string.find(v, "OpenAI", 1, true) and string.find(Config.AIModel, "claude", 1, true) then Config.AIModel = "gpt-4o-mini" end
-			if string.find(v, "Claude", 1, true) and string.find(Config.AIModel, "gpt", 1, true) then Config.AIModel = "claude-sonnet-5-5" end
+		addDropdown(a, "Provider", "AIProvider", { "Free AI (no key)", "Offline Builder (no AI)", "Claude (Anthropic)", "OpenAI" }, function(v)
+			if string.find(v, "Free", 1, true) then Config.AIModel = "openai" end
+			if string.find(v, "OpenAI", 1, true) then Config.AIModel = "gpt-4o-mini" end
+			if string.find(v, "Claude", 1, true) then Config.AIModel = "claude-sonnet-5-5" end
 			UI.sync()
 		end)
-		addInput(a, "API Key (yours, only sent to the provider)", "AIKey", "paste your API key...", function() Feat.aiSaveKey() end)
+		addInput(a, "API Key (only for Claude / OpenAI - not needed for Free AI)", "AIKey", "paste your API key...", function() Feat.aiSaveKey() end)
 		addCheckbox(a, "Remember Key On This Device", "AIRemember", function() Feat.aiSaveKey() end)
 		addInput(a, "Model", "AIModel", "model name")
 		finish(a)
@@ -1483,6 +1484,56 @@ do
 		end)
 		finish(c)
 	end, tabFail("Assistant"))
+
+	xpcall(function() -- V2.0 Extras
+		local p = newPage("Extras")
+		local a = section(p.left, "Safety", 1, "✚")
+		addCheckbox(a, "Anti Void (return to last safe spot)", "AntiVoid")
+		addCheckbox(a, "Anti Fling", "AntiFling")
+		addButton(a, "PANIC - Turn Everything Off", function(btn)
+			flash(btn, "Done!", "PANIC - Turn Everything Off")
+			Feat.panic()
+		end)
+		addKeybind(a, "Panic Key", "PanicKey")
+		finish(a)
+
+		local b = section(p.left, "Combat Helpers", 2, "✚")
+		addCheckbox(b, "Hitbox Expander (others)", "HitboxOn", function(v)
+			if not v then Feat.hitboxRestore() end
+		end)
+		addSlider(b, "Hitbox Size", "HitboxSize", 2, 30, "")
+		finish(b)
+
+		local c = section(p.right, "Overlay", 1, "✚")
+		addCheckbox(c, "FPS / Ping Bar", "StatsHUD", function() Feat.hudApply() end)
+		finish(c)
+
+		local d = section(p.right, "Share Settings", 2, "✚")
+		addButton(d, "Copy My Settings", function(btn)
+			flash(btn, Feat.cfgExport() and "Copied!" or "Failed", "Copy My Settings")
+		end)
+		addInput(d, "Paste Settings Here", "ImportText", "paste copied settings...")
+		addButton(d, "Apply Pasted Settings", function(btn)
+			flash(btn, Feat.cfgImport() and "Applied!" or "Failed", "Apply Pasted Settings")
+		end)
+		finish(d)
+
+		local e = section(p.right, "Script Loader", 3, "✚")
+		addButton(e, "Load Infinite Yield", function(btn)
+			flash(btn, "Loading...", "Load Infinite Yield")
+			task.spawn(Feat.loadUrl, "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source")
+		end)
+		addInput(e, "Script URL", "LoadUrl", "https://raw.githubusercontent.com/...")
+		addButton(e, "Load From URL", function(btn)
+			flash(btn, "Loading...", "Load From URL")
+			task.spawn(Feat.loadUrl, Config.LoadUrl)
+		end)
+		addInput(e, "Run Lua Code", "RunCode", "print('hello')")
+		addButton(e, "Run Code", function(btn)
+			flash(btn, Feat.runCode() and "Running!" or "Error", "Run Code")
+		end)
+		finish(e)
+	end, tabFail("Extras"))
 
 	-- sidebar entries (categories) + pill tabs (pages), like the reference ---
 	local catBtns, pillBtns, catPages, pageCat, lastPage = {}, {}, {}, {}, {}
@@ -1565,7 +1616,7 @@ do
 	addCategory("Visuals", { { "Item ESP", "◎" }, { "Player ESP", "◉" } })
 	addCategory("Alerts", { { "Alerts", "▲" } })
 	addCategory("Items", { { "Item List", "◈" }, { "Pickup", "◆" } })
-	addCategory("Player", { { "Movement", "▶" }, { "Players", "◉" }, { "Utility", "■" }, { "Tools", "◆" } })
+	addCategory("Player", { { "Movement", "▶" }, { "Players", "◉" }, { "Utility", "■" }, { "Tools", "◆" }, { "Extras", "✚" } })
 	addCategory("HvH", { { "HvH", "◆" }, { "Combat", "▶" } })
 	addCategory("AI", { { "Assistant", "✦" } })
 	addCategory("Settings", { { "Colors", "◐" }, { "Settings", "◍" } })
@@ -4138,6 +4189,244 @@ end)
 
 -- AI ASSISTANT: asks an AI model (YOUR api key) to write a Roblox Luau script and saves it as main.lua
 Feat.ai = { code = nil, busy = false }
+-- OFFLINE BUILDER: no AI, no key. Builds main.lua from keywords in your prompt.
+Feat.aiBuild = function(prompt)
+	local p = string.lower(prompt)
+	local mods = {
+		{ id = "fly", name = "Fly", keys = { "fly", "flight" }, code = [==[
+local flyConn, bv
+M.fly = function(on)
+	if flyConn then flyConn:Disconnect() flyConn = nil end
+	if bv then bv:Destroy() bv = nil end
+	local char = lp.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then hum.PlatformStand = false end
+	if not on or not hrp or not hum then return end
+	bv = Instance.new("BodyVelocity")
+	bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+	bv.Velocity = Vector3.zero
+	bv.Parent = hrp
+	hum.PlatformStand = true
+	flyConn = RS.RenderStepped:Connect(function()
+		local cam = WS.CurrentCamera
+		local o = cam.CFrame:VectorToObjectSpace(hum.MoveDirection)
+		bv.Velocity = (cam.CFrame.RightVector * o.X + cam.CFrame.LookVector * -o.Z) * 70
+	end)
+end]==] },
+		{ id = "noclip", name = "Noclip", keys = { "noclip", "wall", "through" }, code = [==[
+local ncConn
+M.noclip = function(on)
+	if ncConn then ncConn:Disconnect() ncConn = nil end
+	if not on then return end
+	ncConn = RS.Stepped:Connect(function()
+		local char = lp.Character
+		if not char then return end
+		for _, v in ipairs(char:GetDescendants()) do
+			if v:IsA("BasePart") then v.CanCollide = false end
+		end
+	end)
+end]==] },
+		{ id = "speed", name = "Speed", keys = { "speed", "fast", "run" }, code = [==[
+local spConn
+M.speed = function(on)
+	if spConn then spConn:Disconnect() spConn = nil end
+	local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+	if not on then
+		if hum then hum.WalkSpeed = 16 end
+		return
+	end
+	spConn = RS.Heartbeat:Connect(function()
+		local h = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+		if h then h.WalkSpeed = 60 end
+	end)
+end]==] },
+		{ id = "jump", name = "Infinite Jump", keys = { "jump" }, code = [==[
+local jConn
+M.jump = function(on)
+	if jConn then jConn:Disconnect() jConn = nil end
+	if not on then return end
+	jConn = UIS.JumpRequest:Connect(function()
+		local h = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+		if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end)
+end]==] },
+		{ id = "esp", name = "Player ESP", keys = { "esp", "wallhack", "highlight", "player" }, code = [==[
+local espObjs, espAdd = {}, nil
+M.esp = function(on)
+	for _, h in pairs(espObjs) do pcall(function() h:Destroy() end) end
+	espObjs = {}
+	if espAdd then espAdd:Disconnect() espAdd = nil end
+	if not on then return end
+	local function mark(plr)
+		if plr == lp then return end
+		local function apply(char)
+			if espObjs[plr] then espObjs[plr]:Destroy() end
+			local h = Instance.new("Highlight")
+			h.FillColor = Color3.fromRGB(0, 226, 212)
+			h.OutlineColor = Color3.new(1, 1, 1)
+			h.FillTransparency = 0.6
+			h.Parent = char
+			espObjs[plr] = h
+		end
+		if plr.Character then apply(plr.Character) end
+		plr.CharacterAdded:Connect(function(c) if on then apply(c) end end)
+	end
+	for _, plr in ipairs(Players:GetPlayers()) do mark(plr) end
+	espAdd = Players.PlayerAdded:Connect(mark)
+end]==] },
+		{ id = "fullbright", name = "Fullbright", keys = { "bright", "light", "dark" }, code = [==[
+local lightOld
+M.fullbright = function(on)
+	if on then
+		lightOld = lightOld or { Lighting.Brightness, Lighting.ClockTime, Lighting.GlobalShadows, Lighting.Ambient }
+		Lighting.Brightness, Lighting.ClockTime, Lighting.GlobalShadows = 2, 14, false
+		Lighting.Ambient = Color3.fromRGB(190, 190, 190)
+	elseif lightOld then
+		Lighting.Brightness, Lighting.ClockTime, Lighting.GlobalShadows, Lighting.Ambient = lightOld[1], lightOld[2], lightOld[3], lightOld[4]
+	end
+end]==] },
+		{ id = "antiafk", name = "Anti AFK", keys = { "afk", "idle", "kick" }, code = [==[
+local afkConn
+M.antiafk = function(on)
+	if afkConn then afkConn:Disconnect() afkConn = nil end
+	if not on then return end
+	afkConn = lp.Idled:Connect(function()
+		local vu = game:GetService("VirtualUser")
+		vu:CaptureController()
+		vu:ClickButton2(Vector2.new())
+	end)
+end]==] },
+		{ id = "spin", name = "Spin", keys = { "spin" }, code = [==[
+local spinConn
+M.spin = function(on)
+	if spinConn then spinConn:Disconnect() spinConn = nil end
+	if not on then return end
+	spinConn = RS.Heartbeat:Connect(function(dt)
+		local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+		if hrp then hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(900) * dt, 0) end
+	end)
+end]==] },
+		{ id = "autoclick", name = "Auto Clicker", keys = { "click", "auto" }, code = [==[
+local clicking = false
+M.autoclick = function(on)
+	clicking = on
+	if not on then return end
+	task.spawn(function()
+		local vu = game:GetService("VirtualUser")
+		while clicking do
+			pcall(function() vu:ClickButton1(Vector2.new(0, 0)) end)
+			task.wait(0.1)
+		end
+	end)
+end]==] },
+		{ id = "clicktp", name = "Tap Teleport", keys = { "teleport", "tp" }, code = [==[
+local tpConn
+M.clicktp = function(on)
+	if tpConn then tpConn:Disconnect() tpConn = nil end
+	if not on then return end
+	local mouse = lp:GetMouse()
+	tpConn = mouse.Button1Down:Connect(function()
+		local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+		if hrp and mouse.Hit then hrp.CFrame = mouse.Hit + Vector3.new(0, 3, 0) end
+	end)
+end]==] },
+		{ id = "gravity", name = "Low Gravity", keys = { "gravity", "moon", "float" }, code = [==[
+M.gravity = function(on)
+	WS.Gravity = on and 60 or 196.2
+end]==] },
+		{ id = "fov", name = "Wide FOV", keys = { "fov", "zoom", "view" }, code = [==[
+local fovConn
+M.fov = function(on)
+	if fovConn then fovConn:Disconnect() fovConn = nil end
+	if not on then WS.CurrentCamera.FieldOfView = 70 return end
+	fovConn = RS.RenderStepped:Connect(function() WS.CurrentCamera.FieldOfView = 110 end)
+end]==] },
+	}
+	local all = string.find(p, "everything", 1, true) or string.find(p, "all ", 1, true) or string.find(p, "hub", 1, true) or string.find(p, "menu", 1, true)
+	local picked = {}
+	for _, m in ipairs(mods) do
+		local hit = all
+		if not hit then
+			for _, k in ipairs(m.keys) do
+				if string.find(p, k, 1, true) then hit = true break end
+			end
+		end
+		if hit then table.insert(picked, m) end
+	end
+	if #picked == 0 then picked = mods end
+	local out = {
+		"-- main.lua | built by CodeBot Offline Builder (no AI, no key)\n-- prompt: " .. string.gsub(prompt, "[\r\n]", " ") .. "\n",
+		[==[local Players = game:GetService("Players")
+local RS = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local WS = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local lp = Players.LocalPlayer
+local M = {}
+]==],
+	}
+	local list = {}
+	for _, m in ipairs(picked) do
+		table.insert(out, m.code .. "\n")
+		table.insert(list, string.format("{ %q, %q }", m.id, m.name))
+	end
+	table.insert(out, "local LIST = { " .. table.concat(list, ", ") .. " }\n")
+	table.insert(out, [==[
+local parent = (gethui and gethui()) or game:GetService("CoreGui")
+local ok = pcall(function() local _ = parent.Name end)
+if not ok then parent = lp:WaitForChild("PlayerGui") end
+local old = parent:FindFirstChild("CodeBotMain")
+if old then old:Destroy() end
+local gui = Instance.new("ScreenGui")
+gui.Name = "CodeBotMain"
+gui.ResetOnSpawn = false
+gui.Parent = parent
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(220, 44 + #LIST * 38)
+frame.Position = UDim2.new(0.5, -110, 0.3, 0)
+frame.BackgroundColor3 = Color3.fromRGB(12, 24, 26)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 14)
+local st = Instance.new("UIStroke", frame)
+st.Color = Color3.fromRGB(0, 226, 212)
+st.Thickness = 2
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 36)
+title.BackgroundTransparency = 1
+title.Text = "main.lua"
+title.TextColor3 = Color3.fromRGB(0, 226, 212)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+title.Parent = frame
+for i, item in ipairs(LIST) do
+	local id, name = item[1], item[2]
+	local on = false
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, -20, 0, 32)
+	b.Position = UDim2.new(0, 10, 0, 40 + (i - 1) * 38)
+	b.BackgroundColor3 = Color3.fromRGB(22, 44, 46)
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 14
+	b.Text = name .. ": OFF"
+	b.AutoButtonColor = true
+	b.Parent = frame
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 10)
+	b.MouseButton1Click:Connect(function()
+		on = not on
+		pcall(M[id], on)
+		b.Text = name .. (on and ": ON" or ": OFF")
+		b.BackgroundColor3 = on and Color3.fromRGB(0, 140, 132) or Color3.fromRGB(22, 44, 46)
+	end)
+end
+]==])
+	return table.concat(out)
+end
+
 Feat.aiSystem = "You are CodeBot, an expert Roblox Luau scripter. Write ONE complete, working, self-contained Luau script for a Roblox executor (Delta, LocalScript context): use game:GetService, Players.LocalPlayer, RunService, UserInputService, etc. Wrap risky calls in pcall and add short comments. Reply with ONLY the code inside a single ```lua code block, no explanations."
 
 Feat.aiStatus = function(t)
@@ -4186,8 +4475,17 @@ Feat.aiGenerate = function()
 		Feat.aiStatus("Type what the script should do first")
 		return
 	end
-	if not Config.AIKey or Config.AIKey == "" then
-		Feat.aiStatus("Paste your API key first")
+	if string.find(Config.AIProvider, "Offline", 1, true) then
+		Feat.ai.code = Feat.aiBuild(prompt)
+		pcall(function() writefile("main.lua", Feat.ai.code) end)
+		Feat.aiShow()
+		Feat.aiStatus("Built offline - saved as main.lua")
+		notify("AI Assistant", "main.lua is ready (Run main.lua to start it)", true)
+		return
+	end
+	local free = string.find(Config.AIProvider, "Free", 1, true) ~= nil
+	if not free and (not Config.AIKey or Config.AIKey == "") then
+		Feat.aiStatus("Paste your API key first (or pick Free AI)")
 		return
 	end
 	local req = request or http_request or (syn and syn.request) or (http and http.request)
@@ -4208,6 +4506,10 @@ Feat.aiGenerate = function()
 			url = "https://api.anthropic.com/v1/messages"
 			headers = { ["Content-Type"] = "application/json", ["x-api-key"] = Config.AIKey, ["anthropic-version"] = "2023-06-01" }
 			body = HttpService:JSONEncode({ model = Config.AIModel, max_tokens = 8000, system = Feat.aiSystem, messages = { { role = "user", content = userText } } })
+		elseif free then
+			url = "https://text.pollinations.ai/openai"
+			headers = { ["Content-Type"] = "application/json" }
+			body = HttpService:JSONEncode({ model = (Config.AIModel ~= "" and Config.AIModel or "openai"), messages = { { role = "system", content = Feat.aiSystem }, { role = "user", content = userText } } })
 		else
 			url = "https://api.openai.com/v1/chat/completions"
 			headers = { ["Content-Type"] = "application/json", ["Authorization"] = "Bearer " .. Config.AIKey }
@@ -4219,7 +4521,9 @@ Feat.aiGenerate = function()
 			errMsg = "Request failed: " .. tostring(res)
 		else
 			local ok2, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
-			if not ok2 or type(data) ~= "table" then
+			if (not ok2 or type(data) ~= "table") and free and type(res.Body) == "string" and #res.Body > 20 then
+				text = res.Body
+			elseif not ok2 or type(data) ~= "table" then
 				errMsg = "Bad reply (HTTP " .. tostring(res.StatusCode) .. ")"
 			elseif data.error then
 				errMsg = tostring(type(data.error) == "table" and data.error.message or data.error)
@@ -4228,6 +4532,11 @@ Feat.aiGenerate = function()
 			else
 				text = data.choices and data.choices[1] and data.choices[1].message and data.choices[1].message.content
 			end
+		end
+		if not text and free then
+			-- second try: the plain GET endpoint of the free service
+			local ok3, r3 = pcall(req, { Url = "https://text.pollinations.ai/" .. HttpService:UrlEncode(userText) .. "?model=openai&system=" .. HttpService:UrlEncode(Feat.aiSystem), Method = "GET" })
+			if ok3 and r3 and type(r3.Body) == "string" and #r3.Body > 20 then text = r3.Body end
 		end
 		Feat.ai.busy = false
 		if not text then
@@ -4273,8 +4582,186 @@ Feat.aiRun = function()
 	end)
 end
 
+-- ===== V2.0 EXTRAS: anti void, anti fling, hitbox, stats HUD, panic, config share, loader, console =====
+Feat.x = { safe = nil, hb = {}, hudT = 0, fps = 60 }
+
+Feat.panic = function()
+	for _, k in ipairs({ "Fly", "Noclip", "OrbitOn", "SpinOn", "AutoCollect", "WalkCollect", "AimOn", "AuraOn", "AutoFace", "CFrameSpeed", "Bhop", "LowGravity", "ClickTP", "AutoClick", "OrbitAttack", "SpectateOn", "HitboxOn", "AntiFling", "AntiVoid" }) do
+		if Config[k] then Config[k] = false end
+	end
+	Config.BypassEnabled = false
+	pcall(Feat.stopFly)
+	pcall(Feat.orbitStop)
+	pcall(Feat.camera)
+	pcall(UI.sync)
+	notify("Panic", "Every feature was switched off", true)
+end
+
+-- anti void: remember the last safe ground spot and return there if you fall out of the map
+table.insert(connections, RunService.Heartbeat:Connect(function(dt)
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not hrp or not hum then return end
+	if Config.AntiVoid then
+		local limit = Workspace.FallenPartsDestroyHeight + 80
+		if hrp.Position.Y < limit then
+			if Feat.x.safe then
+				hrp.AssemblyLinearVelocity = Vector3.zero
+				hrp.CFrame = Feat.x.safe + Vector3.new(0, 4, 0)
+				notify("Anti Void", "Saved you from the void", true)
+			end
+		elseif hum.FloorMaterial ~= Enum.Material.Air and hum.Health > 0 then
+			Feat.x.safe = hrp.CFrame
+		end
+	end
+	-- anti fling: clamp crazy velocities on your own character
+	if Config.AntiFling and not Config.Fly and not Config.OrbitOn and not Feat.walking then
+		if hrp.AssemblyLinearVelocity.Magnitude > 160 or hrp.AssemblyAngularVelocity.Magnitude > 60 then
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+		end
+	end
+	-- stats HUD
+	Feat.x.fps = Feat.x.fps + (1 / math.max(dt, 1e-3) - Feat.x.fps) * 0.1
+	Feat.x.hudT = Feat.x.hudT + dt
+	if Feat.x.hud and Feat.x.hudT > 0.5 then
+		Feat.x.hudT = 0
+		local ping = 0
+		pcall(function() ping = StatsService.Network.ServerStatsItem["Data Ping"]:GetValue() end)
+		Feat.x.hud.Text = string.format("FPS %d  |  Ping %d ms  |  Players %d", Feat.x.fps, ping, #Players:GetPlayers())
+	end
+end))
+
+-- anti fling (other players): their parts stop colliding with you
+table.insert(connections, RunService.Stepped:Connect(function()
+	if not Config.AntiFling then return end
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and plr.Character then
+			for _, part in ipairs(plr.Character:GetChildren()) do
+				if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
+			end
+		end
+	end
+end))
+
+-- hitbox expander (client side, makes other players' root part bigger)
+Feat.hitboxRestore = function()
+	for part, o in pairs(Feat.x.hb) do
+		pcall(function()
+			if part and part.Parent then
+				part.Size, part.Transparency, part.CanCollide = o.size, o.tr, o.cc
+			end
+		end)
+	end
+	Feat.x.hb = {}
+end
+local hbAcc = 0
+table.insert(connections, RunService.Heartbeat:Connect(function(dt)
+	hbAcc = hbAcc + dt
+	if hbAcc < 0.2 then return end
+	hbAcc = 0
+	if not Config.HitboxOn then
+		if next(Feat.x.hb) then Feat.hitboxRestore() end
+		return
+	end
+	local s = Config.HitboxSize
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= player and plr.Character and not (Feat.isSafe and Feat.isSafe(plr)) then
+			local root = plr.Character:FindFirstChild("HumanoidRootPart")
+			if root then
+				if not Feat.x.hb[root] then Feat.x.hb[root] = { size = root.Size, tr = root.Transparency, cc = root.CanCollide } end
+				root.Size = Vector3.new(s, s, s)
+				root.Transparency = 0.75
+				root.CanCollide = false
+			end
+		end
+	end
+end))
+
+-- stats HUD label
+Feat.hudApply = function()
+	if Config.StatsHUD and not Feat.x.hud then
+		local lbl = Instance.new("TextLabel")
+		lbl.Name = "CodeBotStats"
+		lbl.BackgroundColor3 = Color3.fromRGB(10, 20, 22)
+		lbl.BackgroundTransparency = 0.25
+		lbl.TextColor3 = Color3.fromRGB(0, 226, 212)
+		lbl.Font = Enum.Font.GothamBold
+		lbl.TextSize = 13
+		lbl.Size = UDim2.fromOffset(250, 24)
+		lbl.Position = UDim2.new(0.5, -125, 0, 6)
+		lbl.Text = "..."
+		lbl.Parent = UI.main.Parent
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 8)
+		c.Parent = lbl
+		Feat.x.hud = lbl
+	elseif not Config.StatsHUD and Feat.x.hud then
+		Feat.x.hud:Destroy()
+		Feat.x.hud = nil
+	end
+end
+
+-- panic hotkey
+table.insert(connections, UserInputService.InputBegan:Connect(function(input, gp)
+	if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	if Config.PanicKey ~= "None" and input.KeyCode.Name == Config.PanicKey then Feat.panic() end
+end))
+
+-- config sharing
+Feat.cfgExport = function()
+	local ok = pcall(function()
+		saveConfig("CodeBot_share.json")
+		setclipboard(readfile("CodeBot_share.json"))
+	end)
+	return ok
+end
+Feat.cfgImport = function()
+	local txt = Config.ImportText
+	if not txt or txt == "" then return false end
+	local ok = pcall(function()
+		writefile("CodeBot_import.json", txt)
+		loadConfig("CodeBot_import.json")
+		Config.Fly, Config.Noclip, Config.OrbitOn = false, false, false
+		UI.sync()
+	end)
+	return ok
+end
+
+-- loader + console
+Feat.loadUrl = function(url)
+	local ok, err = pcall(function()
+		local src = game:HttpGet(url)
+		local fn, e = loadstring(src)
+		if not fn then error(e) end
+		task.spawn(fn)
+	end)
+	notify("Loader", ok and "Script started" or ("Failed: " .. tostring(err)), true)
+	return ok
+end
+Feat.runCode = function()
+	local fn, err = loadstring(Config.RunCode or "")
+	if not fn then
+		notify("Console", "Syntax error: " .. tostring(err), true)
+		return false
+	end
+	task.spawn(function()
+		local ok, e = pcall(fn)
+		notify("Console", ok and "Ran fine" or ("Error: " .. tostring(e)), true)
+	end)
+	return true
+end
+
+Feat.extraCleanup = function()
+	pcall(Feat.hitboxRestore)
+	Config.StatsHUD = false
+	pcall(Feat.hudApply)
+end
+
 -- undo everything when the script is unloaded
 Feat.cleanup = function()
+	pcall(Feat.extraCleanup)
 	pcall(Feat.fpsRestore)
 	for _, ln in pairs(Feat.cross) do pcall(function() ln:Remove() end) end
 	Config.BypassEnabled = false
