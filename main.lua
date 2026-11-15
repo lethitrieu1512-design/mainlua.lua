@@ -603,6 +603,12 @@ do
 		local function apply(v)
 			TweenService:Create(track, TweenInfo.new(0.14), { BackgroundColor3 = v and C.Accent or C.ToggleOff }):Play()
 			TweenService:Create(knob, TweenInfo.new(0.14), { Position = UDim2.new(0, v and 52 or 6, 0.5, 0) }):Play()
+			if Config.AnimOn then -- jelly knob: stretch while it slides, then spring back
+				knob.Size = UDim2.fromOffset(66, 34)
+				track.Size = UDim2.fromOffset(112, 50)
+				TweenService:Create(knob, TweenInfo.new(0.5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(42, 42) }):Play()
+				TweenService:Create(track, TweenInfo.new(0.5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(100, 54) }):Play()
+			end
 		end
 		table.insert(syncers, function() apply(Config[key]) end)
 		track.MouseButton1Click:Connect(function()
@@ -1693,6 +1699,35 @@ do
 		outGrad.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, hc(0)), ColorSequenceKeypoint.new(0.33, hc(0.25)), ColorSequenceKeypoint.new(0.66, hc(0.5)), ColorSequenceKeypoint.new(1, hc(0)) })
 		if badgeStroke then badgeStroke.Color = hc(0.5) end
 	end))
+	UI.spark = spark
+	-- confetti rain from the top of the screen
+	function UI.confetti()
+		if not Config.AnimOn then return end
+		local w = screenGui.AbsoluteSize.X
+		for i = 1, 45 do
+			task.delay(math.random() * 0.4, function()
+				local x = math.random(0, math.floor(w))
+				spark(Vector2.new(x, guiInset() - 10), math.random(8, 16), 1.3 + math.random() * 0.8, Vector2.new(math.random(-90, 90), math.random(380, 700)), Color3.fromHSV(math.random(), 0.75, 1))
+			end)
+		end
+	end
+	-- badge: gentle float, tap = spin
+	badge.Active = true
+	local spinning = false
+	badge.InputBegan:Connect(function(input)
+		if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) and not spinning then
+			spinning = true
+			UI.click()
+			TweenService:Create(badge, TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Rotation = 360 }):Play()
+			task.delay(0.85, function() badge.Rotation = 0 spinning = false end)
+		end
+	end)
+	local bobT = 0
+	table.insert(connections, RunService.RenderStepped:Connect(function(dt)
+		if not Config.AnimOn or not main.Visible then return end
+		bobT = bobT + dt
+		badge.Position = UDim2.new(0.5, 0, 0, -12 + math.sin(bobT * 2) * 4)
+	end))
 	local function popCards(page)
 		if not Config.AnimOn then return end
 		local i = 0
@@ -1732,12 +1767,17 @@ do
 		UI.currentPage = name
 		local cat = pageCat[name]
 		lastPage[cat] = name
+		task.defer(function() UI.lastCat = cat end)
 		for c, b in pairs(catBtns) do
 			local sel = (c == cat)
 			b.btn.BackgroundTransparency = sel and 0 or 1
 			b.marker.Visible = sel
 			b.text.TextColor3 = sel and C.White or C.SubText
 			b.icon.TextColor3 = sel and C.White or C.SubText
+			if sel and Config.AnimOn and b.icon.Rotation == 0 and UI.lastCat ~= c then
+				b.icon.Rotation = -30
+				TweenService:Create(b.icon, TweenInfo.new(0.55, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), { Rotation = 0 }):Play()
+			end
 		end
 		for n, p in pairs(pillBtns) do
 			local sel = (n == name)
@@ -1953,6 +1993,17 @@ do
 					showMain(true)
 				end
 			end
+		end))
+	end
+	-- minimized logo idle: soft wiggle + colour-breathing outline
+	do
+		local lt = 0
+		table.insert(connections, RunService.RenderStepped:Connect(function(dt)
+			if not Config.AnimOn or not logoBtn.Visible then return end
+			lt = lt + dt
+			logoStroke.Color = Color3.fromHSV(0.5 + math.sin(lt * 1.5) * 0.08, 0.8, 1)
+			logoStroke.Transparency = 0.15 + (math.sin(lt * 3) * 0.5 + 0.5) * 0.4
+			if math.abs(logoBtn.Rotation) < 8 then logoBtn.Rotation = math.sin(lt * 2.2) * 4 end
 		end))
 	end
 	UI.showMain = showMain
@@ -4755,6 +4806,7 @@ Feat.aiGenerate = function()
 		pcall(function() writefile("main.lua", Feat.ai.code) end)
 		Feat.aiShow()
 		Feat.aiStatus("Done - saved as main.lua")
+		if UI.confetti then UI.confetti() end
 		notify("AI Assistant", "main.lua is ready (Run main.lua to start it)", true)
 	end)
 end
