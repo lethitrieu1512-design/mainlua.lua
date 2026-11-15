@@ -50,7 +50,7 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 65, LogoSize = 64, ClickSound = true, RippleOn = true, AIProvider = "Free AI (no key)", AIKey = "", AIModel = "openai", AntiVoid = false, AntiFling = false, HitboxOn = false, HitboxSize = 8, StatsHUD = false, PanicKey = "None", ImportText = "", LoadUrl = "", RunCode = "", AIPrompt = "", AIContinue = true, AIRemember = false,
+	DragSpeed = 65, LogoSize = 64, ClickSound = true, MemeSounds = true, MemeVolume = 5, MemeIds = "6042053626, 5153245698, 7149255551, 9125402735, 5148302439", RippleOn = true, AIProvider = "Free AI (no key)", AIKey = "", AIModel = "openai", AntiVoid = false, AntiFling = false, HitboxOn = false, HitboxSize = 8, StatsHUD = false, PanicKey = "None", ImportText = "", LoadUrl = "", RunCode = "", AIPrompt = "", AIContinue = true, AIRemember = false,
 	Whitelist = "", WhitelistFriends = true, Crosshair = false, CrossSize = 12, CrossGap = 4, ColorCross = Color3.fromRGB(0, 226, 212), TimeOn = false, TimeVal = 14, Profile = "1",
 	BypassEnabled = false, BypassSpot = "Sky Platform", BypassMax = 12, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
@@ -319,11 +319,21 @@ do
 	function UI.click()
 		if not Config.ClickSound then return end
 		local id = CLICK_IDS[Config.ClickSoundType] or CLICK_IDS.Click
-		if id ~= lastClickId then
+		local vol = Config.ClickVolume / 5
+		if Config.MemeSounds then
+			-- random meme sound from your list (comma separated asset ids)
+			local ids = {}
+			for n in string.gmatch(Config.MemeIds or "", "%d+") do table.insert(ids, n) end
+			if #ids > 0 then
+				id = "rbxassetid://" .. ids[math.random(1, #ids)]
+				vol = Config.MemeVolume / 5
+			end
+		end
+		if id ~= lastClickId or Config.MemeSounds then
 			lastClickId = id
 			clickSnd.SoundId = id
 		end
-		clickSnd.Volume = Config.ClickVolume / 5
+		clickSnd.Volume = vol
 		clickSnd.TimePosition = 0
 		pcall(function() clickSnd:Play() end)
 	end
@@ -1084,6 +1094,13 @@ do
 		addSlider(w, "Drag Speed (65% = 0.65)", "DragSpeed", 20, 150, "%")
 		addSlider(w, "Minimized Logo Size", "LogoSize", 36, 160, " px", function() if UI.applyLogo then UI.applyLogo() end end)
 		addCheckbox(w, "Click Sound", "ClickSound")
+		addCheckbox(w, "Random Meme Sounds (every click)", "MemeSounds")
+		addSlider(w, "Meme Volume", "MemeVolume", 1, 10, "")
+		addInput(w, "Meme Sound IDs (comma separated)", "MemeIds", "6042053626, 123456, ...")
+		addButton(w, "Test Meme Sound", function(btn)
+			flash(btn, "Played!", "Test Meme Sound")
+			UI.click()
+		end)
 		addCheckbox(w, "Ripple Effect", "RippleOn")
 		addCheckbox(w, "Window Outline Ripple", "OutlineRipple")
 		addDropdown(w, "Click Sound Type", "ClickSoundType", { "Click", "Snap", "Switch" }, function() UI.click() end)
