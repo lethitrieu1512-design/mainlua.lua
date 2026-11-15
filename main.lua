@@ -50,7 +50,7 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 65, LogoSize = 64, ClickSound = true, MemeSounds = true, MemeVolume = 5, MemeIds = "6042053626, 5153245698, 7149255551, 9125402735, 5148302439", RippleOn = true, AIProvider = "Free AI (no key)", AIKey = "", AIModel = "openai", AntiVoid = false, AntiFling = false, HitboxOn = false, HitboxSize = 8, StatsHUD = false, PanicKey = "None", ImportText = "", LoadUrl = "", RunCode = "", AIPrompt = "", AIContinue = true, AIRemember = false,
+	DragSpeed = 65, LogoSize = 64, ClickSound = true, MemeSounds = true, MemeVolume = 5, MemeIds = "6042053626, 5153245698, 7149255551, 9125402735, 5148302439, 1837879082, 6729921255, 5034170076, 4809574295, 6823153536, 3398620867, 7236490488, 8426851544, 9046863253, 6647898215, 5629143591, 6203105421",LogoJelly = true, RippleOn = true, AIProvider = "Free AI (no key)", AIKey = "", AIModel = "openai", AntiVoid = false, AntiFling = false, HitboxOn = false, HitboxSize = 8, StatsHUD = false, PanicKey = "None", ImportText = "", LoadUrl = "", RunCode = "", AIPrompt = "", AIContinue = true, AIRemember = false,
 	Whitelist = "", WhitelistFriends = true, Crosshair = false, CrossSize = 12, CrossGap = 4, ColorCross = Color3.fromRGB(0, 226, 212), TimeOn = false, TimeVal = 14, Profile = "1",
 	BypassEnabled = false, BypassSpot = "Sky Platform", BypassMax = 12, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
@@ -1094,9 +1094,33 @@ do
 		addSlider(w, "Drag Speed (65% = 0.65)", "DragSpeed", 20, 150, "%")
 		addSlider(w, "Minimized Logo Size", "LogoSize", 36, 160, " px", function() if UI.applyLogo then UI.applyLogo() end end)
 		addCheckbox(w, "Click Sound", "ClickSound")
+		addCheckbox(w, "Logo Squish & Stretch", "LogoJelly")
 		addCheckbox(w, "Random Meme Sounds (every click)", "MemeSounds")
+		addButton(w, "Remove Sounds That Don't Work", function(btn)
+			flash(btn, "Checking...", "Remove Sounds That Don't Work")
+			task.spawn(function()
+				local good, bad = {}, 0
+				for n in string.gmatch(Config.MemeIds or "", "%d+") do
+					local snd = Instance.new("Sound")
+					snd.SoundId = "rbxassetid://" .. n
+					snd.Parent = SoundService
+					pcall(function() game:GetService("ContentProvider"):PreloadAsync({ snd }) end)
+					local t0 = os.clock()
+					while snd.TimeLength == 0 and os.clock() - t0 < 3 do task.wait(0.1) end
+					if snd.TimeLength > 0 then table.insert(good, n) else bad = bad + 1 end
+					snd:Destroy()
+				end
+				Config.MemeIds = table.concat(good, ", ")
+				UI.sync()
+				notify("Meme Sounds", string.format("%d working, %d removed", #good, bad), true)
+			end)
+		end)
 		addSlider(w, "Meme Volume", "MemeVolume", 1, 10, "")
 		addInput(w, "Meme Sound IDs (comma separated)", "MemeIds", "6042053626, 123456, ...")
+		addButton(w, "Find More Meme Sounds (auto)", function(btn)
+			flash(btn, "Searching...", "Find More Meme Sounds (auto)")
+			Feat.soundPack()
+		end)
 		addButton(w, "Test Meme Sound", function(btn)
 			flash(btn, "Played!", "Test Meme Sound")
 			UI.click()
@@ -1737,10 +1761,25 @@ do
 			end)
 		end
 	end
+	-- squish & stretch (jelly) for the small logo: width/height tween around its centre
+	local function jelly(wMul, hMul, t, style, dir)
+		if not Config.LogoJelly then return end
+		local s0 = Config.LogoSize
+		local curW, curH = logoBtn.Size.X.Offset, logoBtn.Size.Y.Offset
+		local p0 = logoBtn.Position
+		local cx, cy = p0.X.Offset - curW / 2, p0.Y.Offset + curH / 2
+		local w, h = s0 * wMul, s0 * hMul
+		TweenService:Create(logoBtn, TweenInfo.new(t, style, dir), {
+			Size = UDim2.fromOffset(w, h),
+			Position = UDim2.new(p0.X.Scale, cx + w / 2, p0.Y.Scale, cy - h / 2),
+		}):Play()
+	end
+	UI.logoJelly = jelly
 	do
 		local dragging, moved, dragStart, startPos = false, false, nil, nil
 		logoBtn.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				jelly(1.3, 0.72, 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) -- squish
 				dragging, moved, dragStart, startPos = true, false, input.Position, logoBtn.Position
 				ripple(true)
 			end
@@ -1758,6 +1797,7 @@ do
 		table.insert(connections, UserInputService.InputEnded:Connect(function(input)
 			if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
 				dragging = false
+				jelly(1, 1, 0.6, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out) -- stretch back
 				if not moved then
 					UI.click()
 					showMain(true)
@@ -4601,6 +4641,58 @@ end
 
 -- ===== V2.0 EXTRAS: anti void, anti fling, hitbox, stats HUD, panic, config share, loader, console =====
 Feat.x = { safe = nil, hb = {}, hudT = 0, fps = 60 }
+
+-- meme sound finder: searches the Roblox audio library, keeps only sounds that really load, adds them to your list
+Feat.soundFind = function(keyword, wanted)
+	local req = request or http_request or (syn and syn.request)
+	if not req then return 0, "no HTTP" end
+	local added = 0
+	local have = {}
+	for n in string.gmatch(Config.MemeIds or "", "%d+") do have[n] = true end
+	local ok, res = pcall(req, { Url = "https://apis.roblox.com/toolbox-service/v1/marketplace/3?limit=30&keyword=" .. HttpService:UrlEncode(keyword), Method = "GET" })
+	if not ok or not res or not res.Body then return 0, "search failed" end
+	local ok2, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+	if not ok2 or type(data) ~= "table" then return 0, "bad reply" end
+	local list = data.data or data.Data or {}
+	local CP = game:GetService("ContentProvider")
+	for _, item in ipairs(list) do
+		if added >= wanted then break end
+		local id = tostring(item.id or item.Id or "")
+		if id ~= "" and not have[id] then
+			local snd = Instance.new("Sound")
+			snd.SoundId = "rbxassetid://" .. id
+			snd.Volume = 0
+			snd.Parent = SoundService
+			pcall(function() CP:PreloadAsync({ snd }) end)
+			local t = 0
+			while not snd.IsLoaded and t < 2 do task.wait(0.1) t = t + 0.1 end
+			local good = snd.IsLoaded and snd.TimeLength > 0.2 and snd.TimeLength < 8
+			snd:Destroy()
+			if good then
+				have[id] = true
+				Config.MemeIds = (Config.MemeIds ~= "" and (Config.MemeIds .. ", ") or "") .. id
+				added = added + 1
+			end
+		end
+	end
+	return added
+end
+Feat.soundPack = function()
+	if Feat.x.finding then return end
+	Feat.x.finding = true
+	task.spawn(function()
+		local total, why = 0, nil
+		for _, kw in ipairs({ "whoa", "bruh", "vine boom", "oof", "among us", "fart", "airhorn", "metal pipe", "taco bell bong", "sad violin" }) do
+			local n, w = Feat.soundFind(kw, 2)
+			total = total + n
+			why = why or w
+			if w == "no HTTP" then break end
+		end
+		Feat.x.finding = false
+		pcall(UI.sync)
+		notify("Meme Sounds", total > 0 and ("Added " .. total .. " new meme sounds") or ("None added" .. (why and (": " .. why) or "")), true)
+	end)
+end
 
 Feat.panic = function()
 	for _, k in ipairs({ "Fly", "Noclip", "OrbitOn", "SpinOn", "AutoCollect", "WalkCollect", "AimOn", "AuraOn", "AutoFace", "CFrameSpeed", "Bhop", "LowGravity", "ClickTP", "AutoClick", "OrbitAttack", "SpectateOn", "HitboxOn", "AntiFling", "AntiVoid" }) do
