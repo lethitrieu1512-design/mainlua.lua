@@ -50,7 +50,7 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 65, LogoSize = 64, ClickSound = true, MemeSounds = true, MemeVolume = 5, MemeIds = "6042053626, 5153245698, 7149255551, 9125402735, 5148302439, 1837879082, 6729921255, 5034170076, 4809574295, 6823153536, 3398620867, 7236490488, 8426851544, 9046863253, 6647898215, 5629143591, 6203105421",LogoJelly = true, RippleOn = true, AIProvider = "Free AI (no key)", AIKey = "", AIModel = "openai", AntiVoid = false, AntiFling = false, HitboxOn = false, HitboxSize = 8, StatsHUD = false, PanicKey = "None", ImportText = "", LoadUrl = "", RunCode = "", AIPrompt = "", AIContinue = true, AIRemember = false,
+	DragSpeed = 65, LogoSize = 64, ClickSound = true, MemeSounds = true, MemeVolume = 5, MemeIds = "6042053626, 5153245698, 7149255551, 9125402735, 5148302439, 1837879082, 6729921255, 5034170076, 4809574295, 6823153536, 3398620867, 7236490488, 8426851544, 9046863253, 6647898215, 5629143591, 6203105421",LogoJelly = true, AnimOn = true, RippleOn = true, AIProvider = "Free AI (no key)", AIKey = "", AIModel = "openai", AntiVoid = false, AntiFling = false, HitboxOn = false, HitboxSize = 8, StatsHUD = false, PanicKey = "None", ImportText = "", LoadUrl = "", RunCode = "", AIPrompt = "", AIContinue = true, AIRemember = false,
 	Whitelist = "", WhitelistFriends = true, Crosshair = false, CrossSize = 12, CrossGap = 4, ColorCross = Color3.fromRGB(0, 226, 212), TimeOn = false, TimeVal = 14, Profile = "1",
 	BypassEnabled = false, BypassSpot = "Sky Platform", BypassMax = 12, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
@@ -566,6 +566,7 @@ do
 		corner(bar, 4)
 		sec.n = sec.n + 1
 		table.insert(sec.rows, r)
+		r:SetAttribute("card", true)
 		return r
 	end
 
@@ -1095,6 +1096,7 @@ do
 		addSlider(w, "Minimized Logo Size", "LogoSize", 36, 160, " px", function() if UI.applyLogo then UI.applyLogo() end end)
 		addCheckbox(w, "Click Sound", "ClickSound")
 		addCheckbox(w, "Logo Squish & Stretch", "LogoJelly")
+		addCheckbox(w, "Animations (glow, bubbles, sheen, pop-in)", "AnimOn")
 		addCheckbox(w, "Random Meme Sounds (every click)", "MemeSounds")
 		addButton(w, "Remove Sounds That Don't Work", function(btn)
 			flash(btn, "Checking...", "Remove Sounds That Don't Work")
@@ -1576,6 +1578,89 @@ do
 		finish(e)
 	end, tabFail("Extras"))
 
+	-- animations: spinning gradient outline, breathing badge glow, cards that pop in one by one
+	local outGrad = create("UIGradient", {
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 226, 212)),
+			ColorSequenceKeypoint.new(0.35, Color3.fromRGB(32, 72, 72)),
+			ColorSequenceKeypoint.new(0.65, Color3.fromRGB(58, 140, 255)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 226, 212)),
+		}),
+	}, mainStroke)
+	local badgeStroke = badge:FindFirstChildOfClass("UIStroke")
+	local animT = 0
+	table.insert(connections, RunService.RenderStepped:Connect(function(dt)
+		if not Config.AnimOn or not main.Visible then
+			if outGrad.Enabled then outGrad.Enabled = false end
+			return
+		end
+		outGrad.Enabled = true
+		animT = animT + dt
+		outGrad.Rotation = (animT * 60) % 360
+		if badgeStroke then badgeStroke.Thickness = 4 + math.sin(animT * 3) * 1.6 end
+	end))
+	-- drifting bubbles behind the content
+	local bubbleBox = create("Frame", { Name = "Bubbles", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ClipsDescendants = true, ZIndex = 0, Active = false }, main)
+	local bubbles = {}
+	for i = 1, 14 do
+		local sz = math.random(10, 30)
+		local b = create("Frame", { Size = UDim2.fromOffset(sz, sz), BackgroundColor3 = (i % 3 == 0) and Color3.fromRGB(58, 140, 255) or Color3.fromRGB(0, 226, 212), BackgroundTransparency = 0.82, BorderSizePixel = 0, ZIndex = 0, Position = UDim2.fromScale(math.random(), math.random()) }, bubbleBox)
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }, b)
+		bubbles[i] = { f = b, x = math.random(), y = math.random(), sp = 0.02 + math.random() * 0.04, ph = math.random() * 6.28 }
+	end
+	-- light sheen sweeping across the window
+	local sheen = create("UIGradient", {
+		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(0.5, Color3.fromRGB(190, 255, 250)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)) }),
+		Rotation = 20,
+	}, main)
+	local anim2 = 0
+	table.insert(connections, RunService.RenderStepped:Connect(function(dt)
+		bubbleBox.Visible = Config.AnimOn and main.Visible
+		if not bubbleBox.Visible then
+			sheen.Enabled = false
+			return
+		end
+		sheen.Enabled = true
+		anim2 = anim2 + dt
+		sheen.Offset = Vector2.new(((anim2 % 6) / 6) * 3 - 1.5, 0)
+		for _, b in ipairs(bubbles) do
+			b.y = b.y - b.sp * dt
+			if b.y < -0.05 then b.y, b.x = 1.05, math.random() end
+			b.f.Position = UDim2.fromScale(b.x + math.sin(anim2 + b.ph) * 0.015, b.y)
+		end
+	end))
+	-- press squish on any card you tap
+	table.insert(connections, UserInputService.InputBegan:Connect(function(input)
+		if not Config.AnimOn or not main.Visible then return end
+		if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+		local ok, objs = pcall(function() return screenGui:GetGuiObjectsAtPosition(input.Position.X, input.Position.Y) end)
+		if not ok then return end
+		for _, o in ipairs(objs) do
+			local card = o
+			while card and card ~= main and not card:GetAttribute("card") do card = card.Parent end
+			if card and card ~= main then
+				local sc = card:FindFirstChild("PopScale") or create("UIScale", { Name = "PopScale" }, card)
+				sc.Scale = 0.95
+				TweenService:Create(sc, TweenInfo.new(0.4, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+				break
+			end
+		end
+	end))
+	local function popCards(page)
+		if not Config.AnimOn then return end
+		local i = 0
+		for _, d in ipairs(page.left:GetDescendants()) do
+			if d:GetAttribute("card") and i < 30 then
+				i = i + 1
+				local sc = d:FindFirstChild("PopScale") or create("UIScale", { Name = "PopScale" }, d)
+				sc.Scale = 0.88
+				task.delay(i * 0.035, function()
+					TweenService:Create(sc, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+				end)
+			end
+		end
+	end
+
 	-- sidebar entries (categories) + pill tabs (pages), like the reference ---
 	local catBtns, pillBtns, catPages, pageCat, lastPage = {}, {}, {}, {}, {}
 	local function selectPage(name)
@@ -1584,6 +1669,7 @@ do
 			if show and not page.frame.Visible then
 				page.frame.Position = UDim2.new(0, 0, 0, 22)
 				TweenService:Create(page.frame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = UDim2.new(0, 0, 0, 0) }):Play()
+				popCards(page)
 			end
 			page.frame.Visible = show
 		end
