@@ -1,4 +1,4 @@
--- CodeBot V2.0 | Roblox Luau (Delta compatible)
+-- Vatom Hub V2.1 | Roblox Luau (Delta compatible)
 -- JJS Item ESP  |  Atom-style GUI  |  HvH tab (orbit / spin)  |  Roblox notifications
 -- Categories, C4/item alerts, radar, off-screen arrows, item list (TP/Hide),
 -- instant/auto pickup, auto collect (TP), player ESP, movement/fly/noclip, utility, save/load config
@@ -50,7 +50,7 @@ local Config = {
 
 	-- misc
 	ToggleKey = "None", AutoSave = true, HideUsername = false,
-	DragSpeed = 65, LogoSize = 64, ClickSound = true, MemeSounds = true, MemeVolume = 5, MemeIds = "6042053626, 5153245698, 7149255551, 9125402735, 5148302439, 1837879082, 6729921255, 5034170076, 4809574295, 6823153536, 3398620867, 7236490488, 8426851544, 9046863253, 6647898215, 5629143591, 6203105421",LogoJelly = true, AnimOn = true, OpenAnim = "Pop", TabAnim = "Slide Up", ClickBurst = true, FingerTrail = true, Rainbow = false, RippleOn = true, AIProvider = "Free AI (no key)", AIKey = "", AIModel = "openai", AntiVoid = false, AntiFling = false, HitboxOn = false, HitboxSize = 8, StatsHUD = false, PanicKey = "None", ImportText = "", LoadUrl = "", RunCode = "", AIPrompt = "", AIContinue = true, AIRemember = false,
+	DragSpeed = 65, LogoSize = 64, ClickSound = true, MemeSounds = true, MemeVolume = 5, MemeIds = "6042053626, 5153245698, 7149255551, 9125402735, 5148302439, 1837879082, 6729921255, 5034170076, 4809574295, 6823153536, 3398620867, 7236490488, 8426851544, 9046863253, 6647898215, 5629143591, 6203105421",LogoJelly = true, AnimOn = true, IntroOn = true, OpenAnim = "Pop", TabAnim = "Slide Up", ClickBurst = true, FingerTrail = true, Rainbow = false, RippleOn = true, AIProvider = "Free AI (no key)", AIKey = "", AIModel = "openai", AntiVoid = false, AntiFling = false, HitboxOn = false, HitboxSize = 8, StatsHUD = false, PanicKey = "None", ImportText = "", LoadUrl = "", RunCode = "", AIPrompt = "", AIContinue = true, AIRemember = false,
 	Whitelist = "", WhitelistFriends = true, Crosshair = false, CrossSize = 12, CrossGap = 4, ColorCross = Color3.fromRGB(0, 226, 212), TimeOn = false, TimeVal = 14, Profile = "1",
 	BypassEnabled = false, BypassSpot = "Sky Platform", BypassMax = 12, MenuKey = "RightShift", DeathReturn = false, FPSBoost = false, JoinAlerts = true, WPSlot = "1", ClickSoundType = "Click", ClickVolume = 5, -- drag speed in % (60 = 0.6), minimized logo size in px
 
@@ -409,7 +409,7 @@ do
 	local header = create("Frame", { Size = UDim2.new(1, 0, 0, HEAD_H), BackgroundTransparency = 1, Active = true }, main)
 	makeDraggable(header, main, true)
 	create("TextLabel", {
-		BackgroundTransparency = 1, Text = "Item ESP Hub [ Free ]", TextSize = 46, Font = F.Semi, TextColor3 = C.White,
+		BackgroundTransparency = 1, Text = "Vatom Hub [ Free ]", TextSize = 46, Font = F.Semi, TextColor3 = C.White,
 		TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 55, 0, 26), Size = UDim2.new(0, 800, 0, 60),
 	}, header)
 	local subTitle = create("TextLabel", {
@@ -1094,7 +1094,7 @@ do
 		addCheckbox(d, "Status Notifications", "StatusNotify")
 		addCheckbox(d, "Player Join / Leave Alerts", "JoinAlerts")
 		addSlider(d, "Notification Time", "NotifyDuration", 2, 15, "s")
-		addButton(d, "Test Roblox Notification", function() notify("Item ESP", "Roblox notifications are working") end)
+		addButton(d, "Test Roblox Notification", function() notify("Vatom Hub", "Roblox notifications are working") end)
 		finish(d)
 
 		local w = section(p.left, "Window", 3, "◍")
@@ -1103,6 +1103,11 @@ do
 		addCheckbox(w, "Click Sound", "ClickSound")
 		addCheckbox(w, "Logo Squish & Stretch", "LogoJelly")
 		addCheckbox(w, "Animations (glow, bubbles, sheen, pop-in)", "AnimOn")
+		addCheckbox(w, "Intro Animation (on start)", "IntroOn")
+		addButton(w, "Replay Intro", function(btn)
+			flash(btn, "Playing...", "Replay Intro")
+			task.spawn(UI.intro, function() if UI.popIn then UI.popIn() end end)
+		end)
 		addCheckbox(w, "Tap Spark Burst", "ClickBurst")
 		addCheckbox(w, "Finger Trail", "FingerTrail")
 		addCheckbox(w, "Rainbow Outline", "Rainbow")
@@ -2011,7 +2016,131 @@ do
 		UI.click()
 		showMain(false)
 	end)
-	task.defer(popIn) -- opening animation when the script starts
+	-- ===== Vatom Hub intro (title card -> HUD frame draws itself -> loading bar -> opens the hub) =====
+	local BLUE = Color3.fromRGB(58, 140, 255)
+	function UI.intro(done)
+		local ended = false
+		local function finish()
+			if ended then return end
+			ended = true
+			main.Visible = true
+			if done then done() end
+		end
+		if not Config.IntroOn then finish() return end
+		main.Visible = false
+		local skip = false
+		local ov = create("TextButton", { Name = "VatomIntro", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(6, 9, 16), BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 200 }, screenGui)
+		ov.MouseButton1Click:Connect(function() skip = true end)
+		local function wait2(t)
+			local e = os.clock() + t
+			while os.clock() < e and not skip do task.wait() end
+		end
+		-- twinkling stars
+		local stars = {}
+		for i = 1, 90 do
+			local sz = math.random(1, 3)
+			stars[i] = { f = create("Frame", { Size = UDim2.fromOffset(sz, sz), Position = UDim2.fromScale(math.random(), math.random()), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0 }, ov), ph = math.random() * 6.28, sp = 1 + math.random() * 2 }
+		end
+		local t0 = os.clock()
+		local starConn = RunService.RenderStepped:Connect(function()
+			for _, st in ipairs(stars) do st.f.BackgroundTransparency = 0.55 + math.sin((os.clock() - t0) * st.sp + st.ph) * 0.35 end
+		end)
+		local sc = screenGui.AbsoluteSize
+		local k = math.clamp(math.min(sc.X / 900, sc.Y / 500), 0.5, 1.6)
+		local function group()
+			local g = create("CanvasGroup", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, GroupTransparency = 1 }, ov)
+			local c = create("Frame", { Size = UDim2.fromOffset(900, 500), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 1 }, g)
+			create("UIScale", { Scale = k }, c)
+			return g, c
+		end
+		local function tw(o, t, props, style, dir)
+			local a = TweenService:Create(o, TweenInfo.new(t, style or Enum.EasingStyle.Quint, dir or Enum.EasingDirection.Out), props)
+			a:Play()
+			return a
+		end
+		local grad = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(0.5, C.Accent), ColorSequenceKeypoint.new(1, BLUE) })
+
+		-- 1) title card with a glowing sweep
+		local tg, tc = group()
+		local title = create("TextLabel", { Size = UDim2.fromOffset(900, 130), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 1, Text = "VATOM HUB",
+			TextSize = 110, Font = F.Bold, TextColor3 = Color3.new(1, 1, 1), ClipsDescendants = true }, tc)
+		create("UIGradient", { Color = grad, Rotation = 0 }, title)
+		create("UIStroke", { Color = C.Accent, Thickness = 2, Transparency = 0.45 }, title)
+		local tScale = create("UIScale", { Scale = 0.9 }, title)
+		local shine = create("Frame", { Size = UDim2.fromOffset(110, 160), Position = UDim2.fromOffset(-140, -15), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Rotation = 12, ZIndex = 5 }, title)
+		create("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.25), NumberSequenceKeypoint.new(1, 1) }) }, shine)
+		tw(tg, 0.6, { GroupTransparency = 0 })
+		tw(tScale, 0.9, { Scale = 1 }, Enum.EasingStyle.Back)
+		wait2(0.35)
+		tw(shine, 1.1, { Position = UDim2.fromOffset(940, -15) }, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+		wait2(1.5)
+		tw(tg, 0.5, { GroupTransparency = 1 })
+		tw(tScale, 0.5, { Scale = 1.12 })
+		wait2(0.55)
+		tg:Destroy()
+
+		-- 2) HUD frame: a line grows, then opens into the box
+		local bg, bc = group()
+		bg.GroupTransparency = 0
+		local box = create("Frame", { Size = UDim2.fromOffset(0, 3), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 1 }, bc)
+		create("UICorner", { CornerRadius = UDim.new(0, 12) }, box)
+		local boxStroke = create("UIStroke", { Color = BLUE, Thickness = 3 }, box)
+		tw(box, 0.45, { Size = UDim2.fromOffset(600, 3) }, Enum.EasingStyle.Quad)
+		wait2(0.5)
+		tw(box, 0.6, { Size = UDim2.fromOffset(600, 200) })
+		-- corner dots + top/bottom ticks in the script colour
+		local function dot(ax, ay, px, py, w, h)
+			local d = create("Frame", { Size = UDim2.fromOffset(0, 0), AnchorPoint = Vector2.new(ax, ay), Position = UDim2.fromScale(px, py), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, box)
+			create("UICorner", { CornerRadius = UDim.new(0, 2) }, d)
+			tw(d, 0.5, { Size = UDim2.fromOffset(w, h) }, Enum.EasingStyle.Back)
+		end
+		dot(0.5, 0.5, 0, 0, 14, 14) dot(0.5, 0.5, 1, 0, 14, 14) dot(0.5, 0.5, 0, 1, 14, 14) dot(0.5, 0.5, 1, 1, 14, 14)
+		dot(0.5, 0.5, 0.5, 0, 70, 6) dot(0.5, 0.5, 0.5, 1, 70, 6)
+		wait2(0.55)
+
+		-- 3) text + loading bar inside the frame
+		local function lbl(text, size, y, font, col)
+			local l = create("TextLabel", { Size = UDim2.fromOffset(580, size + 10), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, y), BackgroundTransparency = 1, Text = text, TextSize = size, Font = font, TextColor3 = col, TextTransparency = 1 }, box)
+			tw(l, 0.5, { TextTransparency = 0 })
+			return l
+		end
+		local l1 = lbl("VATOM HUB", 58, 62, F.Bold, Color3.new(1, 1, 1))
+		create("UIGradient", { Color = grad }, l1)
+		local rule = create("Frame", { Size = UDim2.fromOffset(0, 2), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 104), BackgroundColor3 = BLUE, BorderSizePixel = 0 }, box)
+		tw(rule, 0.6, { Size = UDim2.fromOffset(300, 2) })
+		lbl("JUJUTSU SHENANIGANS  ·  @" .. player.Name, 20, 126, F.Med, Color3.fromRGB(190, 215, 255))
+		local track = create("Frame", { Size = UDim2.fromOffset(420, 8), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 164), BackgroundColor3 = Color3.fromRGB(20, 34, 56), BorderSizePixel = 0 }, box)
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
+		local fill = create("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, track)
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }, fill)
+		create("UIGradient", { Color = ColorSequence.new(BLUE, C.Accent) }, fill)
+		local pct = create("TextLabel", { Size = UDim2.fromOffset(80, 22), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 186), BackgroundTransparency = 1, Text = "0%", TextSize = 16, Font = F.Bold, TextColor3 = C.Accent }, box)
+		local steps = { 0, 18, 41, 67, 89, 100 }
+		for _, v in ipairs(steps) do
+			tw(fill, 0.28, { Size = UDim2.fromScale(v / 100, 1) }, Enum.EasingStyle.Quad)
+			pct.Text = v .. "%"
+			wait2(0.26)
+		end
+		wait2(0.35)
+
+		-- 4) everything fades, the hub opens
+		tw(bg, 0.5, { GroupTransparency = 1 })
+		tw(ov, 0.6, { BackgroundTransparency = 1 })
+		for _, st in ipairs(stars) do tw(st.f, 0.5, { Size = UDim2.fromOffset(0, 0) }) end
+		if not skip then wait2(0.55) end
+		starConn:Disconnect()
+		ov:Destroy()
+		finish()
+	end
+
+	task.defer(function()
+		local ok, err = pcall(UI.intro, function() popIn() end)
+		if not ok then
+			warn("Vatom Hub intro error: " .. tostring(err))
+			main.Visible = true
+			popIn()
+		end
+	end)
 
 	-- radar overlay (drag it anywhere; stays visible while minimized) -----
 	local radar = create("Frame", {
@@ -5130,5 +5259,5 @@ Actions.unload = cleanup
 getgenv().ItemESP_Cleanup = cleanup
 if UI.closeBtn then UI.closeBtn.MouseButton1Click:Connect(cleanup) end
 
-print("CodeBot V1.1: Item ESP loaded (alerts for: " .. Config.AlertNames .. ")")
+print("Vatom Hub: Item ESP loaded (alerts for: " .. Config.AlertNames .. ")")
 notify("Item ESP loaded", "Alerts for: " .. Config.AlertNames, true)
