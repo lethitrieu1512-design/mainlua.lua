@@ -73,7 +73,7 @@ local Config = {
 	ClickTP = false, SpectateOn = false, TPName = "",
 
 	-- HvH
-	OrbitOn = false, OrbitSpeed = 2000, OrbitRadius = 8, OrbitHeight = 0, OrbitTarget = "", OrbitStableCam = true,
+	OrbitOn = false, OrbitSmart = true, OrbitSpeed = 2000, OrbitRadius = 8, OrbitHeight = 0, OrbitTarget = "", OrbitStableCam = true,
 	OrbitMode = "Circle", OrbitTargetMode = "Closest", OrbitLock = true, OrbitFace = true, OrbitTeamCheck = true,
 	OrbitMaxDist = 1000, OrbitKey = "None", OrbitAttack = false, OrbitAttackCPS = 12,
 	SpinOn = false, SpinSpeed = 1500,
@@ -1193,6 +1193,7 @@ do
 		end)
 		addDropdown(o, "Orbit Mode", "OrbitMode", { "Circle", "Behind", "Random", "Vertical" })
 		addSlider(o, "Orbit Speed (deg/s)", "OrbitSpeed", 100, 20000, "")
+		addCheckbox(o, "Smart Orbit (avoid walls & buildings)", "OrbitSmart")
 		addSlider(o, "Radius", "OrbitRadius", 2, 40, " st")
 		addSlider(o, "Height", "OrbitHeight", -10, 20, " st")
 		addCheckbox(o, "Face Target", "OrbitFace")
@@ -2018,6 +2019,7 @@ do
 	end)
 	-- ===== Vatom Hub intro (title card -> HUD frame draws itself -> loading bar -> opens the hub) =====
 	local BLUE = Color3.fromRGB(58, 140, 255)
+	local IFONT = Enum.Font.Michroma -- wide geometric caps for the intro only (the hub keeps its own font)
 	function UI.intro(done)
 		local ended = false
 		local function finish()
@@ -2030,7 +2032,7 @@ do
 		main.Visible = false
 		local skip = false
 		local ov = create("TextButton", { Name = "VatomIntro", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(6, 9, 16), BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 200 }, screenGui)
-		ov.MouseButton1Click:Connect(function() skip = true end)
+		ov.Modal = true -- swallows every tap: the intro cannot be skipped
 		local function wait2(t)
 			local e = os.clock() + t
 			while os.clock() < e and not skip do task.wait() end
@@ -2062,8 +2064,8 @@ do
 
 		-- 1) title card with a glowing sweep
 		local tg, tc = group()
-		local title = create("TextLabel", { Size = UDim2.fromOffset(900, 130), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 1, Text = "VATOM HUB",
-			TextSize = 110, Font = F.Bold, TextColor3 = Color3.new(1, 1, 1), ClipsDescendants = true }, tc)
+		local title = create("TextLabel", { Size = UDim2.fromOffset(900, 130), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 1, Text = "VΛTOM HUB",
+			TextSize = 84, Font = IFONT, TextColor3 = Color3.new(1, 1, 1), ClipsDescendants = true }, tc)
 		create("UIGradient", { Color = grad, Rotation = 0 }, title)
 		create("UIStroke", { Color = C.Accent, Thickness = 2, Transparency = 0.45 }, title)
 		local tScale = create("UIScale", { Scale = 0.9 }, title)
@@ -2104,17 +2106,17 @@ do
 			tw(l, 0.5, { TextTransparency = 0 })
 			return l
 		end
-		local l1 = lbl("VATOM HUB", 58, 62, F.Bold, Color3.new(1, 1, 1))
+		local l1 = lbl("VΛTOM HUB", 42, 62, IFONT, Color3.new(1, 1, 1))
 		create("UIGradient", { Color = grad }, l1)
 		local rule = create("Frame", { Size = UDim2.fromOffset(0, 2), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 104), BackgroundColor3 = BLUE, BorderSizePixel = 0 }, box)
 		tw(rule, 0.6, { Size = UDim2.fromOffset(300, 2) })
-		lbl("JUJUTSU SHENANIGANS  ·  @" .. player.Name, 20, 126, F.Med, Color3.fromRGB(190, 215, 255))
+		lbl("JUJUTSU SHENANIGANS  ·  @" .. string.upper(player.Name), 14, 126, IFONT, Color3.fromRGB(190, 215, 255))
 		local track = create("Frame", { Size = UDim2.fromOffset(420, 8), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 164), BackgroundColor3 = Color3.fromRGB(20, 34, 56), BorderSizePixel = 0 }, box)
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
 		local fill = create("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.Accent, BorderSizePixel = 0 }, track)
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }, fill)
 		create("UIGradient", { Color = ColorSequence.new(BLUE, C.Accent) }, fill)
-		local pct = create("TextLabel", { Size = UDim2.fromOffset(80, 22), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 186), BackgroundTransparency = 1, Text = "0%", TextSize = 16, Font = F.Bold, TextColor3 = C.Accent }, box)
+		local pct = create("TextLabel", { Size = UDim2.fromOffset(80, 22), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 186), BackgroundTransparency = 1, Text = "0%", TextSize = 14, Font = IFONT, TextColor3 = C.Accent }, box)
 		local steps = { 0, 18, 41, 67, 89, 100 }
 		for _, v in ipairs(steps) do
 			tw(fill, 0.28, { Size = UDim2.fromScale(v / 100, 1) }, Enum.EasingStyle.Quad)
@@ -3631,6 +3633,46 @@ Feat.orbitApply = function()
 	hrp.AssemblyAngularVelocity = Vector3.zero
 end
 
+-- smart orbit: keep the orbit point out of walls / buildings
+Feat.orbitClear = function(tp, pos, dt, char)
+	local o = Feat.orbit
+	local now = os.clock()
+	if not o.rp or now - (o.rpT or 0) > 0.5 then
+		local list = { char }
+		for _, pl in ipairs(Players:GetPlayers()) do
+			if pl.Character then table.insert(list, pl.Character) end
+		end
+		if espFolder then table.insert(list, espFolder) end
+		local rp = RaycastParams.new()
+		rp.FilterType = Enum.RaycastFilterType.Exclude
+		rp.FilterDescendantsInstances = list
+		pcall(function() rp.RespectCanCollide = true end)
+		local op = OverlapParams.new()
+		op.FilterType = Enum.RaycastFilterType.Exclude
+		op.FilterDescendantsInstances = list
+		o.rp, o.op, o.rpT = rp, op, now
+	end
+	o.k = o.k or 1
+	local origin = tp + Vector3.new(0, 1.5, 0)
+	local want = pos - origin
+	local dist = want.Magnitude
+	if dist < 0.1 then return pos end
+	local res = Workspace:Raycast(origin, want + want.Unit * 1.5, o.rp)
+	local k = 1
+	if res then k = math.clamp(((res.Position - origin).Magnitude - 1.5) / dist, 0.2, 1) end
+	if k < o.k then o.k = k else o.k = math.min(k, o.k + dt * 3) end -- shrink instantly, grow back smoothly
+	local p = origin + want * o.k
+	for _ = 1, 4 do -- still inside a solid part? lift up until free
+		local solid = false
+		for _, part in ipairs(Workspace:GetPartBoundsInRadius(p, 1.3, o.op)) do
+			if part.CanCollide then solid = true break end
+		end
+		if not solid then break end
+		p = p + Vector3.new(0, 3, 0)
+	end
+	return p
+end
+
 Feat.orbitUpdate = function(dt)
 	local o = Feat.orbit
 	if not Config.OrbitOn or Feat.walking or Config.Fly then
@@ -3769,6 +3811,10 @@ Feat.orbitUpdate = function(dt)
 		up = Vector3.zAxis
 	else -- Circle
 		pos = tp + Vector3.new(math.cos(o.angle) * R, H, math.sin(o.angle) * R)
+	end
+	if Config.OrbitSmart then
+		local okc, np = pcall(Feat.orbitClear, tp, pos, dt, char)
+		if okc and np then pos = np end
 	end
 	if Config.OrbitFace then
 		o.cf = CFrame.lookAt(pos, tp, up)
