@@ -73,7 +73,7 @@ local Config = {
 	ClickTP = false, SpectateOn = false, TPName = "",
 
 	-- HvH
-	OrbitOn = false, OrbitSmart = true, OrbitSpeed = 2000, OrbitRadius = 8, OrbitHeight = 0, OrbitTarget = "", OrbitStableCam = true,
+	OrbitOn = false, OrbitSmart = true, OrbitBreak = true, OrbitStuckTime = 3, OrbitBreakTime = 8, M1Method = "Auto", M1X = 75, M1Y = 45, OrbitSpeed = 2000, OrbitRadius = 8, OrbitHeight = 0, OrbitTarget = "", OrbitStableCam = true,
 	OrbitMode = "Circle", OrbitTargetMode = "Closest", OrbitLock = true, OrbitFace = true, OrbitTeamCheck = true,
 	OrbitMaxDist = 1000, OrbitKey = "None", OrbitAttack = false, OrbitAttackCPS = 12,
 	SpinOn = false, SpinSpeed = 1500,
@@ -1194,6 +1194,12 @@ do
 		addDropdown(o, "Orbit Mode", "OrbitMode", { "Circle", "Behind", "Random", "Vertical" })
 		addSlider(o, "Orbit Speed (deg/s)", "OrbitSpeed", 100, 20000, "")
 		addCheckbox(o, "Smart Orbit (avoid walls & buildings)", "OrbitSmart")
+		addCheckbox(o, "Break Walls When Stuck (M1)", "OrbitBreak")
+		addSlider(o, "Stuck After No Damage For (s)", "OrbitStuckTime", 1, 10, " s")
+		addSlider(o, "Give Up Breaking After (s)", "OrbitBreakTime", 3, 20, " s")
+		addDropdown(o, "M1 Method", "M1Method", { "Auto", "Screen Button", "All Methods" })
+		addSlider(o, "Screen Button X (%)", "M1X", 5, 95, "%")
+		addSlider(o, "Screen Button Y (%)", "M1Y", 5, 95, "%")
 		addSlider(o, "Radius", "OrbitRadius", 2, 40, " st")
 		addSlider(o, "Height", "OrbitHeight", -10, 20, " st")
 		addCheckbox(o, "Face Target", "OrbitFace")
@@ -3571,7 +3577,7 @@ Feat.kills = 0
 Feat.orbit = { angle = 0, target = nil, hum = nil, lastPick = 0, cf = nil, stand = false, lastClip = 0, lastAtk = 0, lastInfo = 0 }
 
 -- finds the best target: Closest or Lowest HP, optional name filter / team check / max distance
-Feat.pickOrbit = function(origin)
+Feat.pickOrbit = function(origin, ignoreSkip)
 	local want = string.lower(Config.OrbitTarget or "")
 	local lowHp = Config.OrbitTargetMode == "Lowest HP"
 	local best, bestScore, bestHum
@@ -3582,7 +3588,7 @@ Feat.pickOrbit = function(origin)
 			local h = c and c:FindFirstChildOfClass("Humanoid")
 			if r and h and h.Health > 0 then
 				local okName = want == "" or string.find(string.lower(plr.Name), want, 1, true) or string.find(string.lower(plr.DisplayName), want, 1, true)
-				local okTeam = not (Config.OrbitTeamCheck and plr.Team ~= nil and plr.Team == player.Team) and not Feat.isSafe(plr)
+				local okTeam = not (Config.OrbitTeamCheck and plr.Team ~= nil and plr.Team == player.Team) and not Feat.isSafe(plr) and (ignoreSkip or not (Feat.orbit.skip[plr.Name] and Feat.orbit.skip[plr.Name] > os.clock()))
 				local d = (r.Position - origin).Magnitude
 				if okName and okTeam and d <= Config.OrbitMaxDist then
 					local score = lowHp and h.Health or d
@@ -3673,6 +3679,151 @@ Feat.orbitClear = function(tp, pos, dt, char)
 	return p
 end
 
+-- ===== smart orbit v2: leave = dead, stuck detection, wall breaking with M1 =====
+Feat.orbit.skip = {}
+
+-- raycast / overlap filters (all characters + the ESP folder are ignored; non-solid parts are ignored)
+Feat.orbitRP = function(char)
+	local o = Feat.orbit
+	local now = os.clock()
+	if o.rp and now - (o.rpT or 0) <= 0.5 then return end
+	local list = { char }
+	for _, pl in ipairs(Players:GetPlayers()) do
+		if pl.Character then table.insert(list, pl.Character) end
+	end
+	if espFolder then table.insert(list, espFolder) end
+	local rp = RaycastParams.new()
+	rp.FilterType = Enum.RaycastFilterType.Exclude
+	rp.FilterDescendantsInstances = list
+	pcall(function() rp.RespectCanCollide = true end)
+	local op = OverlapParams.new()
+	op.FilterType = Enum.RaycastFilterType.Exclude
+	op.FilterDescendantsInstances = list
+	o.rp, o.op, o.rpT = rp, op, now
+end
+
+-- M1 (basic attack): tool, virtual user click, or a tap on a screen point (the fist button)
+Feat.m1 = function(char)
+	local m = Config.M1Method
+	if m ~= "Screen Button" then
+		local tool = char and char:FindFirstChildOfClass("Tool")
+		if tool then pcall(function() tool:Activate() end) end
+		pcall(function() game:GetService("VirtualUser"):ClickButton1(Vector2.new(0, 0)) end)
+	end
+	if m == "Screen Button" or m == "All Methods" then
+		pcall(function()
+			local vim = game:GetService("VirtualInputManager")
+			local vp = Workspace.CurrentCamera.ViewportSize
+			local x, y = vp.X * Config.M1X / 100, vp.Y * Config.M1Y / 100
+			vim:SendTouchEvent(7, 0, x, y)
+			vim:SendTouchEvent(7, 2, x, y)
+			vim:SendMouseButtonEvent(x, y, 0, true, game, 0)
+			vim:SendMouseButtonEvent(x, y, 0, false, game, 0)
+		end)
+	end
+end
+
+-- looks at the 3D space around the character and returns the wall that is most in the way
+Feat.scanWall = function(from, to)
+	local o = Feat.orbit
+	local toVec = to - from
+	local toU = toVec.Magnitude > 0.1 and toVec.Unit or Vector3.zero
+	local best, bestScore
+	local direct = Workspace:Raycast(from + Vector3.new(0, 1, 0), toVec, o.rp)
+	if direct then best, bestScore = direct, (direct.Position - from).Magnitude * 0.5 - 12 end
+	for x = -1, 1 do
+		for y = -1, 1 do
+			for z = -1, 1 do
+				if x ~= 0 or y ~= 0 or z ~= 0 then
+					local d = Vector3.new(x, y, z).Unit
+					local res = Workspace:Raycast(from, d * 14, o.rp)
+					if res then
+						local score = (res.Position - from).Magnitude * 0.5 - d:Dot(toU) * 8
+						if not bestScore or score < bestScore then best, bestScore = res, score end
+					end
+				end
+			end
+		end
+	end
+	return best
+end
+
+-- returns true when it took control of the character this frame
+Feat.orbitBreak = function(dt, hrp, t, char, now)
+	local o = Feat.orbit
+	if not Config.OrbitBreak or not o.engaged or not o.hum then
+		o.breaking = false
+		return false
+	end
+	Feat.orbitRP(char)
+	-- damage tracking: dealing damage = not stuck, never try to escape
+	local hp = o.hum.Health
+	if o.hpT ~= t or not o.lastHP then
+		o.hpT, o.lastHP, o.lastDmg, o.breaking, o.blocked = t, hp, now, false, false
+	end
+	if hp < o.lastHP - 0.01 then o.lastDmg = now end
+	o.lastHP = hp
+
+	if o.breaking then
+		local w = o.wallPart
+		local broken = (not w) or (not w.Parent) or (not w.CanCollide) or w.Transparency > 0.95
+		local clear = not Workspace:Raycast(hrp.Position + Vector3.new(0, 1, 0), t.Position - hrp.Position, o.rp)
+		if broken or clear then
+			o.breaking = false
+			o.lastDmg = now
+			notify("Smart Orbit", "Wall is gone - back to the target", true)
+		elseif now - o.lastDmg < 1.2 then
+			o.breaking = false -- damage is landing again: keep orbiting
+		elseif now - o.breakStart > Config.OrbitBreakTime then
+			o.breaking = false
+			o.skip[t.Parent and t.Parent.Name or "?"] = now + 20
+			o.target = nil -- escape: pick someone else
+			notify("Smart Orbit", "Cannot break this wall - switching target", true)
+			return true
+		else
+			o.cf = o.breakCF
+			if now - (o.lastM1 or 0) > 1 / 12 then
+				o.lastM1 = now
+				Feat.m1(char)
+			end
+			if now - o.lastInfo > 0.3 then
+				o.lastInfo = now
+				Feat.orbitInfo("Breaking wall (M1)... " .. math.max(0, math.floor(Config.OrbitBreakTime - (now - o.breakStart))) .. "s")
+			end
+			return true
+		end
+	end
+
+	-- stuck detection: a solid wall between us and the target AND no damage dealt for a while
+	if now - (o.lastBlk or 0) > 0.2 then
+		o.lastBlk = now
+		o.blocked = Workspace:Raycast(hrp.Position + Vector3.new(0, 1, 0), t.Position - hrp.Position, o.rp) ~= nil
+	end
+	if o.blocked and now - o.lastDmg >= Config.OrbitStuckTime then
+		local hit = Feat.scanWall(hrp.Position, t.Position)
+		if hit then
+			o.breaking, o.breakStart, o.wallPart = true, now, hit.Instance
+			local stand = hit.Position + hit.Normal * 2.4
+			o.breakCF = CFrame.lookAt(stand, Vector3.new(hit.Position.X, stand.Y, hit.Position.Z))
+			notify("Smart Orbit", "Stuck behind a wall - breaking it with M1", true)
+		end
+	end
+	return false
+end
+
+-- a target that leaves / rage quits counts as dead
+table.insert(connections, Players.PlayerRemoving:Connect(function(plr)
+	local o = Feat.orbit
+	if o.tplr == plr then
+		if o.hum and o.hum.Health > 0 then
+			Feat.kills = Feat.kills + 1
+			if Config.NotifyKill then notify("Target left", plr.Name .. " left - counted as dead, switching target", true) end
+		end
+		o.target, o.hum, o.tplr, o.engaged, o.breaking = nil, nil, nil, false, false
+		o.lastPick = 0
+	end
+end))
+
 Feat.orbitUpdate = function(dt)
 	local o = Feat.orbit
 	if not Config.OrbitOn or Feat.walking or Config.Fly then
@@ -3701,6 +3852,7 @@ Feat.orbitUpdate = function(dt)
 	if not valid or (not Config.OrbitLock and now - o.lastPick > 0.2) then
 		o.lastPick = now
 		local cand, candHum = Feat.pickOrbit(hrp.Position)
+		if not cand and not valid then cand, candHum = Feat.pickOrbit(hrp.Position, true) end
 		if cand then
 			if not valid then
 				o.target, o.hum = cand, candHum
@@ -3714,6 +3866,7 @@ Feat.orbitUpdate = function(dt)
 		end
 	end
 	if o.target ~= prevT then o.engaged = false end
+	if o.target and o.target.Parent then o.tplr = Players:GetPlayerFromCharacter(o.target.Parent) end
 	local t = o.target
 	if not t then
 		o.cf = nil
@@ -3793,6 +3946,10 @@ Feat.orbitUpdate = function(dt)
 		end
 	end
 
+	if Feat.orbitBreak(dt, hrp, t, char, now) then
+		Feat.orbitApply()
+		return
+	end
 	o.angle = (o.angle + math.rad(Config.OrbitSpeed) * dt) % (math.pi * 2)
 	local tp = t.Position
 	local R, H = Config.OrbitRadius, Config.OrbitHeight
